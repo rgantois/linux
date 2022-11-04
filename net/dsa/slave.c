@@ -336,7 +336,7 @@ void dsa_slave_mii_bus_init(struct dsa_switch *ds)
 	ds->slave_mii_bus->read = dsa_slave_phy_read;
 	ds->slave_mii_bus->write = dsa_slave_phy_write;
 	snprintf(ds->slave_mii_bus->id, MII_BUS_ID_SIZE, "dsa-%d.%d",
-		 ds->dst->index, ds->index);
+		 ds->index, ds->index);
 	ds->slave_mii_bus->parent = ds->dev;
 	ds->slave_mii_bus->phy_mask = ~ds->phys_mii_mask;
 }
@@ -1969,11 +1969,12 @@ static void dsa_hw_port_list_free(struct list_head *hw_port_list)
 static void dsa_bridge_mtu_normalization(struct dsa_port *dp)
 {
 	struct list_head hw_port_list;
-	struct dsa_switch_tree *dst;
 	int min_mtu = ETH_MAX_MTU;
 	struct dsa_port *other_dp;
+	struct dsa_switch *ds;
 	int err;
 
+	ds = dp->ds;
 	if (!dp->ds->mtu_enforcement_ingress)
 		return;
 
@@ -1985,34 +1986,32 @@ static void dsa_bridge_mtu_normalization(struct dsa_port *dp)
 	/* Populate the list of ports that are part of the same bridge
 	 * as the newly added/modified port
 	 */
-	list_for_each_entry(dst, &dsa_tree_list, list) {
-		list_for_each_entry(other_dp, &dst->ports, list) {
-			struct dsa_hw_port *hw_port;
-			struct net_device *slave;
+	list_for_each_entry(other_dp, &ds->ports, list) {
+		struct dsa_hw_port *hw_port;
+		struct net_device *slave;
 
-			if (other_dp->type != DSA_PORT_TYPE_USER)
-				continue;
+		if (other_dp->type != DSA_PORT_TYPE_USER)
+			continue;
 
-			if (!dsa_port_bridge_same(dp, other_dp))
-				continue;
+		if (!dsa_port_bridge_same(dp, other_dp))
+			continue;
 
-			if (!other_dp->ds->mtu_enforcement_ingress)
-				continue;
+		if (!other_dp->ds->mtu_enforcement_ingress)
+			continue;
 
-			slave = other_dp->slave;
+		slave = other_dp->slave;
 
-			if (min_mtu > slave->mtu)
-				min_mtu = slave->mtu;
+		if (min_mtu > slave->mtu)
+			min_mtu = slave->mtu;
 
-			hw_port = kzalloc(sizeof(*hw_port), GFP_KERNEL);
-			if (!hw_port)
-				goto out;
+		hw_port = kzalloc(sizeof(*hw_port), GFP_KERNEL);
+		if (!hw_port)
+			goto out;
 
-			hw_port->dev = slave;
-			hw_port->old_mtu = slave->mtu;
+		hw_port->dev = slave;
+		hw_port->old_mtu = slave->mtu;
 
-			list_add(&hw_port->list, &hw_port_list);
-		}
+		list_add(&hw_port->list, &hw_port_list);
 	}
 
 	/* Attempt to configure the entire hardware bridge to the newly added
@@ -2051,7 +2050,7 @@ int dsa_slave_change_mtu(struct net_device *dev, int new_mtu)
 	if (!ds->ops->port_change_mtu)
 		return -EOPNOTSUPP;
 
-	dsa_tree_for_each_user_port(other_dp, ds->dst) {
+	dsa_tree_for_each_user_port(other_dp, ds) {
 		int slave_mtu;
 
 		/* During probe, this function will be called for each slave
@@ -2073,10 +2072,10 @@ int dsa_slave_change_mtu(struct net_device *dev, int new_mtu)
 			largest_mtu = slave_mtu;
 	}
 
-	overhead = dsa_tag_protocol_overhead(cpu_dp->tag_ops);
-	mtu_limit = min_t(int, master->max_mtu, dev->max_mtu + overhead);
+	//this tag protocol doesn't introduce overhead in the eth packets
+	mtu_limit = min_t(int, master->max_mtu, dev->max_mtu);
 	old_master_mtu = master->mtu;
-	new_master_mtu = largest_mtu + overhead;
+	new_master_mtu = largest_mtu;
 	if (new_master_mtu > mtu_limit)
 		return -ERANGE;
 
@@ -2506,14 +2505,9 @@ void dsa_slave_setup_tagger(struct net_device *slave)
 	const struct dsa_port *cpu_dp = dp->cpu_dp;
 	const struct dsa_switch *ds = dp->ds;
 
-	slave->needed_headroom = cpu_dp->tag_ops->needed_headroom;
-	slave->needed_tailroom = cpu_dp->tag_ops->needed_tailroom;
-	/* Try to save one extra realloc later in the TX path (in the master)
-	 * by also inheriting the master's needed headroom and tailroom.
-	 * The 8021q driver also does this.
-	 */
-	slave->needed_headroom += master->needed_headroom;
-	slave->needed_tailroom += master->needed_tailroom;
+	//tag protocol doesn't use any headroom or tailroom
+	slave->needed_headroom = master->needed_headroom;
+	slave->needed_tailroom = master->needed_tailroom;
 
 	p->xmit = cpu_dp->tag_ops->xmit;
 
@@ -2629,7 +2623,7 @@ int dsa_slave_create(struct dsa_port *port)
 	if (ret) {
 		netdev_err(slave_dev,
 			   "error %d setting up PHY for tree %d, switch %d, port %d\n",
-			   ret, ds->dst->index, ds->index, port->index);
+			   ret, ds->index, ds->index, port->index);
 		goto out_gcells;
 	}
 
@@ -3037,10 +3031,11 @@ static int dsa_lag_master_validate(struct net_device *lag_dev,
 			if (lower1 == lower2)
 				continue;
 
-			if (!dsa_port_tree_same(lower1->dsa_ptr,
+			///dsa_port_tree_same always false! replace with dsa_port_switch_same
+			if (!dsa_port_switch_same(lower1->dsa_ptr,
 						lower2->dsa_ptr)) {
 				NL_SET_ERR_MSG_MOD(extack,
-						   "LAG contains DSA masters of disjoint switch trees");
+						   "LAG contains DSA masters of disjoint switches");
 				return notifier_from_errno(-EINVAL);
 			}
 		}
@@ -3104,7 +3099,7 @@ dsa_lag_master_prechangelower_sanity_check(struct net_device *dev,
 	}
 
 	netdev_for_each_lower_dev(lag_dev, lower, iter) {
-		if (!dsa_port_tree_same(dev->dsa_ptr, lower->dsa_ptr)) {
+		if (!dsa_port_switch_same(dev->dsa_ptr, lower->dsa_ptr)) {
 			NL_SET_ERR_MSG(extack,
 				       "Interface is DSA master for a different switch tree than this LAG");
 			return notifier_from_errno(-EINVAL);
@@ -3156,14 +3151,14 @@ dsa_bridge_prechangelower_sanity_check(struct net_device *new_lower,
 	return NOTIFY_DONE;
 }
 
-static void dsa_tree_migrate_ports_from_lag_master(struct dsa_switch_tree *dst,
+static void dsa_tree_migrate_ports_from_lag_master(struct dsa_switch *ds,
 						   struct net_device *lag_dev)
 {
-	struct net_device *new_master = dsa_tree_find_first_master(dst);
+	struct net_device *new_master = dsa_tree_find_first_master(ds);
 	struct dsa_port *dp;
 	int err;
 
-	dsa_tree_for_each_user_port(dp, dst) {
+	dsa_tree_for_each_user_port(dp, ds) {
 		if (dsa_port_to_master(dp) != lag_dev)
 			continue;
 
@@ -3182,7 +3177,6 @@ static int dsa_master_lag_join(struct net_device *master,
 			       struct netlink_ext_ack *extack)
 {
 	struct dsa_port *cpu_dp = master->dsa_ptr;
-	struct dsa_switch_tree *dst = cpu_dp->dst;
 	struct dsa_port *dp;
 	int err;
 
@@ -3190,7 +3184,7 @@ static int dsa_master_lag_join(struct net_device *master,
 	if (err)
 		return err;
 
-	dsa_tree_for_each_user_port(dp, dst) {
+	dsa_tree_for_each_user_port(dp, dp->ds) {
 		if (dsa_port_to_master(dp) != master)
 			continue;
 
@@ -3202,7 +3196,7 @@ static int dsa_master_lag_join(struct net_device *master,
 	return 0;
 
 restore:
-	dsa_tree_for_each_user_port_continue_reverse(dp, dst) {
+	dsa_tree_for_each_user_port_continue_reverse(dp, dp->ds) {
 		if (dsa_port_to_master(dp) != lag_dev)
 			continue;
 
@@ -3223,7 +3217,7 @@ static void dsa_master_lag_leave(struct net_device *master,
 				 struct net_device *lag_dev)
 {
 	struct dsa_port *dp, *cpu_dp = lag_dev->dsa_ptr;
-	struct dsa_switch_tree *dst = cpu_dp->dst;
+	struct dsa_switch *ds = cpu_dp->ds;
 	struct dsa_port *new_cpu_dp = NULL;
 	struct net_device *lower;
 	struct list_head *iter;
@@ -3239,7 +3233,7 @@ static void dsa_master_lag_leave(struct net_device *master,
 		/* Update the CPU port of the user ports still under the LAG
 		 * so that dsa_port_to_master() continues to work properly
 		 */
-		dsa_tree_for_each_user_port(dp, dst)
+		dsa_tree_for_each_user_port(dp, ds)
 			if (dsa_port_to_master(dp) == lag_dev)
 				dp->cpu_dp = new_cpu_dp;
 
@@ -3252,7 +3246,7 @@ static void dsa_master_lag_leave(struct net_device *master,
 		/* If the LAG DSA master has no ports left, migrate back all
 		 * user ports to the first physical CPU port
 		 */
-		dsa_tree_migrate_ports_from_lag_master(dst, lag_dev);
+		dsa_tree_migrate_ports_from_lag_master(ds, lag_dev);
 	}
 
 	/* This DSA master has left its LAG in any case, so let
@@ -3369,10 +3363,10 @@ static int dsa_slave_netdevice_event(struct notifier_block *nb,
 		 */
 		if (netdev_uses_dsa(dev)) {
 			struct dsa_port *cpu_dp = dev->dsa_ptr;
-			struct dsa_switch_tree *dst = cpu_dp->ds->dst;
+			struct dsa_switch *ds = cpu_dp->ds;
 
 			/* Track when the master port is UP */
-			dsa_tree_master_oper_state_change(dst, dev,
+			dsa_tree_master_oper_state_change(ds, dev,
 							  netif_oper_up(dev));
 
 			/* Track when the master port is ready and can accept
@@ -3383,7 +3377,7 @@ static int dsa_slave_netdevice_event(struct notifier_block *nb,
 			 * We check if a master port is ready by checking if the dev
 			 * have a qdisc assigned and is not noop.
 			 */
-			dsa_tree_master_admin_state_change(dst, dev,
+			dsa_tree_master_admin_state_change(ds, dev,
 							   !qdisc_tx_is_noop(dev));
 
 			return NOTIFY_OK;
@@ -3393,18 +3387,18 @@ static int dsa_slave_netdevice_event(struct notifier_block *nb,
 	}
 	case NETDEV_GOING_DOWN: {
 		struct dsa_port *dp, *cpu_dp;
-		struct dsa_switch_tree *dst;
+		struct dsa_switch *ds;
 		LIST_HEAD(close_list);
 
 		if (!netdev_uses_dsa(dev))
 			return NOTIFY_DONE;
 
 		cpu_dp = dev->dsa_ptr;
-		dst = cpu_dp->ds->dst;
+		ds = cpu_dp->ds;
 
-		dsa_tree_master_admin_state_change(dst, dev, false);
+		dsa_tree_master_admin_state_change(ds, dev, false);
 
-		list_for_each_entry(dp, &dst->ports, list) {
+		list_for_each_entry(dp, &ds->ports, list) {
 			if (!dsa_port_is_user(dp))
 				continue;
 
@@ -3491,13 +3485,13 @@ static bool dsa_foreign_dev_check(const struct net_device *dev,
 				  const struct net_device *foreign_dev)
 {
 	const struct dsa_port *dp = dsa_slave_to_port(dev);
-	struct dsa_switch_tree *dst = dp->ds->dst;
+	struct dsa_switch *ds = dp->ds;
 
 	if (netif_is_bridge_master(foreign_dev))
-		return !dsa_tree_offloads_bridge_dev(dst, foreign_dev);
+		return !dsa_tree_offloads_bridge_dev(ds, foreign_dev);
 
 	if (netif_is_bridge_port(foreign_dev))
-		return !dsa_tree_offloads_bridge_port(dst, foreign_dev);
+		return !dsa_tree_offloads_bridge_port(ds, foreign_dev);
 
 	/* Everything else is foreign */
 	return true;

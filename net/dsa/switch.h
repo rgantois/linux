@@ -30,8 +30,6 @@ enum {
 	DSA_NOTIFIER_HOST_VLAN_DEL,
 	DSA_NOTIFIER_MTU,
 	DSA_NOTIFIER_TAG_PROTO,
-	DSA_NOTIFIER_TAG_PROTO_CONNECT,
-	DSA_NOTIFIER_TAG_PROTO_DISCONNECT,
 	DSA_NOTIFIER_TAG_8021Q_VLAN_ADD,
 	DSA_NOTIFIER_TAG_8021Q_VLAN_DEL,
 	DSA_NOTIFIER_MASTER_STATE_CHANGE,
@@ -111,8 +109,8 @@ struct dsa_notifier_master_state_info {
 	bool operational;
 };
 
-int dsa_tree_notify(struct dsa_switch_tree *dst, unsigned long e, void *v);
-int dsa_broadcast(unsigned long e, void *v);
+int dsa_tree_notify(struct dsa_switch *ds, unsigned long e, void *v);
+int dsa_broadcast(struct dsa_switch *ds, unsigned long e, void *v);
 
 int dsa_switch_register_notifier(struct dsa_switch *ds);
 void dsa_switch_unregister_notifier(struct dsa_switch *ds);

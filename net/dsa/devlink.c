@@ -291,7 +291,6 @@ EXPORT_SYMBOL_GPL(dsa_devlink_region_destroy);
 int dsa_port_devlink_setup(struct dsa_port *dp)
 {
 	struct devlink_port *dlp = &dp->devlink_port;
-	struct dsa_switch_tree *dst = dp->ds->dst;
 	struct devlink_port_attrs attrs = {};
 	struct devlink *dl = dp->ds->devlink;
 	struct dsa_switch *ds = dp->ds;
@@ -308,8 +307,8 @@ int dsa_port_devlink_setup(struct dsa_port *dp)
 			return err;
 	}
 
-	id = (const unsigned char *)&dst->index;
-	len = sizeof(dst->index);
+	id = (const unsigned char *)&ds->index;
+	len = sizeof(ds->index);
 
 	attrs.phys.port_number = dp->index;
 	memcpy(attrs.switch_id.id, id, len);

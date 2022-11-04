@@ -16,7 +16,6 @@
 #include "port.h"
 #include "slave.h"
 #include "switch.h"
-#include "tag_8021q.h"
 
 /**
  * dsa_port_notify - Notify the switching fabric of changes to a port
@@ -32,7 +31,7 @@
  */
 static int dsa_port_notify(const struct dsa_port *dp, unsigned long e, void *v)
 {
-	return dsa_tree_notify(dp->ds->dst, e, v);
+	return dsa_tree_notify(dp->ds, e, v);
 }
 
 static void dsa_port_notify_bridge_fdb_flush(const struct dsa_port *dp, u16 vid)
@@ -428,7 +427,7 @@ static int dsa_port_bridge_create(struct dsa_port *dp,
 	struct dsa_switch *ds = dp->ds;
 	struct dsa_bridge *bridge;
 
-	bridge = dsa_tree_bridge_find(ds->dst, br);
+	bridge = dsa_tree_bridge_find(ds, br);
 	if (bridge) {
 		refcount_inc(&bridge->refcount);
 		dp->bridge = bridge;
@@ -443,7 +442,7 @@ static int dsa_port_bridge_create(struct dsa_port *dp,
 
 	bridge->dev = br;
 
-	bridge->num = dsa_bridge_num_get(br, ds->max_num_bridges);
+	bridge->num = dsa_bridge_num_get(ds, br, ds->max_num_bridges);
 	if (ds->max_num_bridges && !bridge->num) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Range of offloadable bridges exceeded");
@@ -506,7 +505,7 @@ int dsa_port_bridge_join(struct dsa_port *dp, struct net_device *br,
 	brport_dev = dsa_port_to_bridge_port(dp);
 
 	info.bridge = *dp->bridge;
-	err = dsa_broadcast(DSA_NOTIFIER_BRIDGE_JOIN, &info);
+	err = dsa_broadcast(dp->ds, DSA_NOTIFIER_BRIDGE_JOIN, &info);
 	if (err)
 		goto out_rollback;
 
@@ -532,7 +531,7 @@ out_rollback_unoffload:
 					&dsa_slave_switchdev_blocking_notifier);
 	dsa_flush_workqueue();
 out_rollback_unbridge:
-	dsa_broadcast(DSA_NOTIFIER_BRIDGE_LEAVE, &info);
+	dsa_broadcast(dp->ds, DSA_NOTIFIER_BRIDGE_LEAVE, &info);
 out_rollback:
 	dsa_port_bridge_destroy(dp, br);
 	return err;
@@ -573,7 +572,7 @@ void dsa_port_bridge_leave(struct dsa_port *dp, struct net_device *br)
 	 */
 	dsa_port_bridge_destroy(dp, br);
 
-	err = dsa_broadcast(DSA_NOTIFIER_BRIDGE_LEAVE, &info);
+	err = dsa_broadcast(dp->ds, DSA_NOTIFIER_BRIDGE_LEAVE, &info);
 	if (err)
 		dev_err(dp->ds->dev,
 			"port %d failed to notify DSA_NOTIFIER_BRIDGE_LEAVE: %pe\n",
@@ -614,7 +613,7 @@ static int dsa_port_lag_create(struct dsa_port *dp,
 	struct dsa_switch *ds = dp->ds;
 	struct dsa_lag *lag;
 
-	lag = dsa_tree_lag_find(ds->dst, lag_dev);
+	lag = dsa_tree_lag_find(ds, lag_dev);
 	if (lag) {
 		refcount_inc(&lag->refcount);
 		dp->lag = lag;
@@ -629,7 +628,7 @@ static int dsa_port_lag_create(struct dsa_port *dp,
 	mutex_init(&lag->fdb_lock);
 	INIT_LIST_HEAD(&lag->fdbs);
 	lag->dev = lag_dev;
-	dsa_lag_map(ds->dst, lag);
+	dsa_lag_map(ds, lag);
 	dp->lag = lag;
 
 	return 0;
@@ -646,7 +645,7 @@ static void dsa_port_lag_destroy(struct dsa_port *dp)
 		return;
 
 	WARN_ON(!list_empty(&lag->fdbs));
-	dsa_lag_unmap(dp->ds->dst, lag);
+	dsa_lag_unmap(dp->ds, lag);
 	kfree(lag);
 }
 
@@ -2055,33 +2054,3 @@ void dsa_port_hsr_leave(struct dsa_port *dp, struct net_device *hsr)
 	}
 }
 
-int dsa_port_tag_8021q_vlan_add(struct dsa_port *dp, u16 vid, bool broadcast)
-{
-	struct dsa_notifier_tag_8021q_vlan_info info = {
-		.dp = dp,
-		.vid = vid,
-	};
-
-	if (broadcast)
-		return dsa_broadcast(DSA_NOTIFIER_TAG_8021Q_VLAN_ADD, &info);
-
-	return dsa_port_notify(dp, DSA_NOTIFIER_TAG_8021Q_VLAN_ADD, &info);
-}
-
-void dsa_port_tag_8021q_vlan_del(struct dsa_port *dp, u16 vid, bool broadcast)
-{
-	struct dsa_notifier_tag_8021q_vlan_info info = {
-		.dp = dp,
-		.vid = vid,
-	};
-	int err;
-
-	if (broadcast)
-		err = dsa_broadcast(DSA_NOTIFIER_TAG_8021Q_VLAN_DEL, &info);
-	else
-		err = dsa_port_notify(dp, DSA_NOTIFIER_TAG_8021Q_VLAN_DEL, &info);
-	if (err)
-		dev_err(dp->ds->dev,
-			"port %d failed to notify tag_8021q VLAN %d deletion: %pe\n",
-			dp->index, vid, ERR_PTR(err));
-}
