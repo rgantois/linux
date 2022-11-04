@@ -1,0 +1,22 @@
+drivers/net/ethernet/mediatek/mtk_eth_soc.c:	       dev->dsa_ptr->tag_ops->proto == DSA_TAG_PROTO_MTK;
+drivers/net/ethernet/mediatek/mtk_ppe.c:		    skb->dev->dsa_ptr->tag_ops->proto != DSA_TAG_PROTO_MTK)
+drivers/net/ethernet/mediatek/mtk_ppe_offload.c:	if (dp->cpu_dp->tag_ops->proto != DSA_TAG_PROTO_MTK)
+include/linux/dsa/ocelot.h:	BUG_ON(ds->dst->tag_ops->proto != DSA_TAG_PROTO_OCELOT_8021Q);
+include/linux/dsa/sja1105.h:	BUG_ON(ds->dst->tag_ops->proto != DSA_TAG_PROTO_SJA1105 &&
+include/linux/dsa/sja1105.h:	       ds->dst->tag_ops->proto != DSA_TAG_PROTO_SJA1110);
+list:include/linux/dsa/ocelot.h:	BUG_ON(ds->dst->tag_ops->proto != DSA_TAG_PROTO_OCELOT_8021Q);
+list:include/linux/dsa/sja1105.h:	BUG_ON(ds->dst->tag_ops->proto != DSA_TAG_PROTO_SJA1105 &&
+list:include/linux/dsa/sja1105.h:	       ds->dst->tag_ops->proto != DSA_TAG_PROTO_SJA1110);
+list:net/dsa/dsa.c:	if (tag_ops->proto == dst->default_proto)
+net/dsa/slave.c:	slave->needed_headroom = cpu_dp->tag_ops->needed_headroom;
+net/dsa/slave.c:	slave->needed_tailroom = cpu_dp->tag_ops->needed_tailroom;
+net/dsa/slave.c:	p->xmit = cpu_dp->tag_ops->xmit;
+tag_ops:include/linux/dsa/ocelot.h:	BUG_ON(ds->dst->tag_ops->proto != DSA_TAG_PROTO_OCELOT_8021Q);
+tag_ops:include/linux/dsa/sja1105.h:	BUG_ON(ds->dst->tag_ops->proto != DSA_TAG_PROTO_SJA1105 &&
+tag_ops:include/linux/dsa/sja1105.h:	       ds->dst->tag_ops->proto != DSA_TAG_PROTO_SJA1110);
+tag_ops:list:include/linux/dsa/ocelot.h:	BUG_ON(ds->dst->tag_ops->proto != DSA_TAG_PROTO_OCELOT_8021Q);
+tag_ops:list:include/linux/dsa/sja1105.h:	BUG_ON(ds->dst->tag_ops->proto != DSA_TAG_PROTO_SJA1105 &&
+tag_ops:list:include/linux/dsa/sja1105.h:	       ds->dst->tag_ops->proto != DSA_TAG_PROTO_SJA1110);
+tag_ops:list:net/dsa/dsa.c:	if (tag_ops->proto == dst->default_proto)
+tag_ops:net/dsa/dsa.c:	if (tag_ops->proto == dst->default_proto)
+tag_ops:net/dsa/list:dsa.c:	if (tag_ops->proto == dst->default_proto)

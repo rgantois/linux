@@ -204,12 +204,9 @@ int __dsa_master_hwtstamp_validate(struct net_device *dev,
 {
 	struct dsa_port *cpu_dp = dev->dsa_ptr;
 	struct dsa_switch *ds = cpu_dp->ds;
-	struct dsa_switch_tree *dst;
 	struct dsa_port *dp;
 
-	dst = ds->dst;
-
-	list_for_each_entry(dp, &dst->ports, list) {
+	list_for_each_entry(dp, &ds->ports, list) {
 		if (dsa_port_supports_hwtstamp(dp)) {
 			NL_SET_ERR_MSG(extack,
 				       "HW timestamping not allowed on DSA master when switch supports the operation");
@@ -277,67 +274,8 @@ static void dsa_master_set_promiscuity(struct net_device *dev, int inc)
 	dev_set_promiscuity(dev, inc);
 }
 
-static ssize_t tagging_show(struct device *d, struct device_attribute *attr,
-			    char *buf)
-{
-	struct net_device *dev = to_net_dev(d);
-	struct dsa_port *cpu_dp = dev->dsa_ptr;
-
-	return sysfs_emit(buf, "%s\n",
-		       dsa_tag_protocol_to_str(cpu_dp->tag_ops));
-}
-
-static ssize_t tagging_store(struct device *d, struct device_attribute *attr,
-			     const char *buf, size_t count)
-{
-	const struct dsa_device_ops *new_tag_ops, *old_tag_ops;
-	const char *end = strchrnul(buf, '\n'), *name;
-	struct net_device *dev = to_net_dev(d);
-	struct dsa_port *cpu_dp = dev->dsa_ptr;
-	size_t len = end - buf;
-	int err;
-
-	/* Empty string passed */
-	if (!len)
-		return -ENOPROTOOPT;
-
-	name = kstrndup(buf, len, GFP_KERNEL);
-	if (!name)
-		return -ENOMEM;
-
-	old_tag_ops = cpu_dp->tag_ops;
-	new_tag_ops = dsa_tag_driver_get_by_name(name);
-	kfree(name);
-	/* Bad tagger name? */
-	if (IS_ERR(new_tag_ops))
-		return PTR_ERR(new_tag_ops);
-
-	if (new_tag_ops == old_tag_ops)
-		/* Drop the temporarily held duplicate reference, since
-		 * the DSA switch tree uses this tagger.
-		 */
-		goto out;
-
-	err = dsa_tree_change_tag_proto(cpu_dp->ds->dst, new_tag_ops,
-					old_tag_ops);
-	if (err) {
-		/* On failure the old tagger is restored, so we don't need the
-		 * driver for the new one.
-		 */
-		dsa_tag_driver_put(new_tag_ops);
-		return err;
-	}
-
-	/* On success we no longer need the module for the old tagging protocol
-	 */
-out:
-	dsa_tag_driver_put(old_tag_ops);
-	return count;
-}
-static DEVICE_ATTR_RW(tagging);
 
 static struct attribute *dsa_slave_attrs[] = {
-	&dev_attr_tagging.attr,
 	NULL
 };
 
@@ -358,12 +296,12 @@ static void dsa_master_reset_mtu(struct net_device *dev)
 
 int dsa_master_setup(struct net_device *dev, struct dsa_port *cpu_dp)
 {
-	const struct dsa_device_ops *tag_ops = cpu_dp->tag_ops;
 	struct dsa_switch *ds = cpu_dp->ds;
 	struct device_link *consumer_link;
 	int mtu, ret;
 
-	mtu = ETH_DATA_LEN + dsa_tag_protocol_overhead(tag_ops);
+	//tag protocol doesn't add overhead to eth packet
+	mtu = ETH_DATA_LEN;
 
 	/* The DSA master must use SET_NETDEV_DEV for this to work. */
 	if (!netif_is_lag_master(dev)) {

@@ -56,6 +56,7 @@ struct phylink_link_state;
 #define DSA_TAG_PROTO_RTL8_4T_VALUE		25
 #define DSA_TAG_PROTO_RZN1_A5PSW_VALUE		26
 #define DSA_TAG_PROTO_LAN937X_VALUE		27
+#define DSA_TAG_PROTO_OOB_VALUE			28
 
 enum dsa_tag_protocol {
 	DSA_TAG_PROTO_NONE		= DSA_TAG_PROTO_NONE_VALUE,
@@ -86,6 +87,7 @@ enum dsa_tag_protocol {
 	DSA_TAG_PROTO_RTL8_4T		= DSA_TAG_PROTO_RTL8_4T_VALUE,
 	DSA_TAG_PROTO_RZN1_A5PSW	= DSA_TAG_PROTO_RZN1_A5PSW_VALUE,
 	DSA_TAG_PROTO_LAN937X		= DSA_TAG_PROTO_LAN937X_VALUE,
+	DSA_TAG_PROTO_OOB		= DSA_TAG_PROTO_OOB_VALUE,
 };
 
 struct dsa_switch;
@@ -117,87 +119,18 @@ struct dsa_lag {
 	refcount_t refcount;
 };
 
-struct dsa_switch_tree {
-	struct list_head	list;
+/* LAG IDs are one-based, the ds->lags array is zero-based */
+#define dsa_lags_foreach_id(_id, _ds)				\
+	for ((_id) = 1; (_id) <= (_ds)->lags_len; (_id)++)	\
+		if ((_ds)->lags[(_id) - 1])
 
-	/* List of switch ports */
-	struct list_head ports;
-
-	/* Notifier chain for switch-wide events */
-	struct raw_notifier_head	nh;
-
-	/* Tree identifier */
-	unsigned int index;
-
-	/* Number of switches attached to this tree */
-	struct kref refcount;
-
-	/* Maps offloaded LAG netdevs to a zero-based linear ID for
-	 * drivers that need it.
-	 */
-	struct dsa_lag **lags;
-
-	/* Tagging protocol operations */
-	const struct dsa_device_ops *tag_ops;
-
-	/* Default tagging protocol preferred by the switches in this
-	 * tree.
-	 */
-	enum dsa_tag_protocol default_proto;
-
-	/* Has this tree been applied to the hardware? */
-	bool setup;
-
-	/*
-	 * Configuration data for the platform device that owns
-	 * this dsa switch tree instance.
-	 */
-	struct dsa_platform_data	*pd;
-
-	/* List of DSA links composing the routing table */
-	struct list_head rtable;
-
-	/* Length of "lags" array */
-	unsigned int lags_len;
-
-	/* Track the largest switch index within a tree */
-	unsigned int last_switch;
-};
-
-/* LAG IDs are one-based, the dst->lags array is zero-based */
-#define dsa_lags_foreach_id(_id, _dst)				\
-	for ((_id) = 1; (_id) <= (_dst)->lags_len; (_id)++)	\
-		if ((_dst)->lags[(_id) - 1])
-
-#define dsa_lag_foreach_port(_dp, _dst, _lag)			\
-	list_for_each_entry((_dp), &(_dst)->ports, list)	\
+#define dsa_lag_foreach_port(_dp, _ds, _lag)			\
+	list_for_each_entry((_dp), &(_ds)->ports, list)	\
 		if (dsa_port_offloads_lag((_dp), (_lag)))
 
 #define dsa_hsr_foreach_port(_dp, _ds, _hsr)			\
-	list_for_each_entry((_dp), &(_ds)->dst->ports, list)	\
+	list_for_each_entry((_dp), &(_ds)->ports, list)	\
 		if ((_dp)->ds == (_ds) && (_dp)->hsr_dev == (_hsr))
-
-static inline struct dsa_lag *dsa_lag_by_id(struct dsa_switch_tree *dst,
-					    unsigned int id)
-{
-	/* DSA LAG IDs are one-based, dst->lags is zero-based */
-	return dst->lags[id - 1];
-}
-
-static inline int dsa_lag_id(struct dsa_switch_tree *dst,
-			     struct net_device *lag_dev)
-{
-	unsigned int id;
-
-	dsa_lags_foreach_id(id, dst) {
-		struct dsa_lag *lag = dsa_lag_by_id(dst, id);
-
-		if (lag->dev == lag_dev)
-			return lag->id;
-	}
-
-	return -ENODEV;
-}
 
 /* TC matchall action types */
 enum dsa_port_mall_action_type {
@@ -250,7 +183,6 @@ struct dsa_port {
 	const struct dsa_device_ops *tag_ops;
 
 	/* Copies for faster access in master receive hot path */
-	struct dsa_switch_tree *dst;
 	struct sk_buff *(*rcv)(struct sk_buff *skb, struct net_device *dev);
 
 	struct dsa_switch	*ds;
@@ -320,7 +252,7 @@ struct dsa_port {
 };
 
 /* TODO: ideally DSA ports would have a single dp->link_dp member,
- * and no dst->rtable nor this struct dsa_link would be needed,
+ * and no ds->rtable nor this struct dsa_link would be needed,
  * but this would require some more complex tree walking,
  * so keep it stupid at the moment and list them all.
  */
@@ -366,14 +298,36 @@ struct dsa_switch {
 	/*
 	 * Parent switch tree, and switch index.
 	 */
-	struct dsa_switch_tree	*dst;
 	unsigned int		index;
 
-	/* Warning: the following bit fields are not atomic, and updating them
-	 * can only be done from code paths where concurrency is not possible
-	 * (probe time or under rtnl_lock).
+	/* List of switch ports */
+	struct list_head ports;
+
+	/* Has this switch been applied to the hardware? */
+	bool setup;
+
+	/* Notifier chain for switch-wide events */
+	struct raw_notifier_head	nh;
+
+	/* Maps offloaded LAG netdevs to a zero-based linear ID for
+	 * drivers that need it.
 	 */
-	u32			setup:1;
+	struct dsa_lag **lags;
+
+	/* Length of "lags" array */
+	unsigned int lags_len;
+
+	/* List of DSA links composing the routing table */
+	struct list_head rtable;
+
+	/* Tagging protocol operations */
+	const struct dsa_device_ops *tag_ops;
+
+	/* Default tagging protocol preferred by the switches in this
+	 * tree.
+	 */
+	enum dsa_tag_protocol default_proto;
+
 
 	/* Disallow bridge core from requesting different VLAN awareness
 	 * settings on ports if not hardware-supported
@@ -480,12 +434,33 @@ struct dsa_switch {
 	unsigned int		num_ports;
 };
 
+static inline struct dsa_lag *dsa_lag_by_id(struct dsa_switch *ds,
+					    unsigned int id)
+{
+	/* DSA LAG IDs are one-based, ds->lags is zero-based */
+	return ds->lags[id - 1];
+}
+
+static inline int dsa_lag_id(struct dsa_switch *ds,
+			     struct net_device *lag_dev)
+{
+	unsigned int id;
+
+	dsa_lags_foreach_id(id, ds) {
+		struct dsa_lag *lag = dsa_lag_by_id(ds, id);
+
+		if (lag->dev == lag_dev)
+			return lag->id;
+	}
+
+	return -ENODEV;
+}
+
 static inline struct dsa_port *dsa_to_port(struct dsa_switch *ds, int p)
 {
-	struct dsa_switch_tree *dst = ds->dst;
 	struct dsa_port *dp;
 
-	list_for_each_entry(dp, &dst->ports, list)
+	list_for_each_entry(dp, &ds->ports, list)
 		if (dp->ds == ds && dp->index == p)
 			return dp;
 
@@ -514,6 +489,7 @@ static inline bool dsa_port_is_unused(struct dsa_port *dp)
 
 static inline bool dsa_port_master_is_operational(struct dsa_port *dp)
 {
+	pr_info("dsa_port_master_is_operational: %px\n", dp);
 	return dsa_port_is_cpu(dp) && dp->master_admin_up &&
 	       dp->master_oper_up;
 }
@@ -538,28 +514,28 @@ static inline bool dsa_is_user_port(struct dsa_switch *ds, int p)
 	return dsa_to_port(ds, p)->type == DSA_PORT_TYPE_USER;
 }
 
-#define dsa_tree_for_each_user_port(_dp, _dst) \
-	list_for_each_entry((_dp), &(_dst)->ports, list) \
+#define dsa_tree_for_each_user_port(_dp, _ds) \
+	list_for_each_entry((_dp), &(_ds)->ports, list) \
 		if (dsa_port_is_user((_dp)))
 
-#define dsa_tree_for_each_user_port_continue_reverse(_dp, _dst) \
-	list_for_each_entry_continue_reverse((_dp), &(_dst)->ports, list) \
+#define dsa_tree_for_each_user_port_continue_reverse(_dp, _ds) \
+	list_for_each_entry_continue_reverse((_dp), &(_ds)->ports, list) \
 		if (dsa_port_is_user((_dp)))
 
-#define dsa_tree_for_each_cpu_port(_dp, _dst) \
-	list_for_each_entry((_dp), &(_dst)->ports, list) \
+#define dsa_tree_for_each_cpu_port(_dp, _ds) \
+	list_for_each_entry((_dp), &(_ds)->ports, list) \
 		if (dsa_port_is_cpu((_dp)))
 
 #define dsa_switch_for_each_port(_dp, _ds) \
-	list_for_each_entry((_dp), &(_ds)->dst->ports, list) \
+	list_for_each_entry((_dp), &(_ds)->ports, list) \
 		if ((_dp)->ds == (_ds))
 
 #define dsa_switch_for_each_port_safe(_dp, _next, _ds) \
-	list_for_each_entry_safe((_dp), (_next), &(_ds)->dst->ports, list) \
+	list_for_each_entry_safe((_dp), (_next), &(_ds)->ports, list) \
 		if ((_dp)->ds == (_ds))
 
 #define dsa_switch_for_each_port_continue_reverse(_dp, _ds) \
-	list_for_each_entry_continue_reverse((_dp), &(_ds)->dst->ports, list) \
+	list_for_each_entry_continue_reverse((_dp), &(_ds)->ports, list) \
 		if ((_dp)->ds == (_ds))
 
 #define dsa_switch_for_each_available_port(_dp, _ds) \
@@ -603,10 +579,9 @@ static inline u32 dsa_cpu_ports(struct dsa_switch *ds)
 /* Return the local port used to reach an arbitrary switch device */
 static inline unsigned int dsa_routing_port(struct dsa_switch *ds, int device)
 {
-	struct dsa_switch_tree *dst = ds->dst;
 	struct dsa_link *dl;
 
-	list_for_each_entry(dl, &dst->rtable, list)
+	list_for_each_entry(dl, &ds->rtable, list)
 		if (dl->dp->ds == ds && dl->link_dp->ds->index == device)
 			return dl->dp->index;
 
@@ -771,12 +746,12 @@ static inline bool dsa_port_offloads_bridge(struct dsa_port *dp,
 }
 
 /* Returns true if any port of this tree offloads the given net_device */
-static inline bool dsa_tree_offloads_bridge_port(struct dsa_switch_tree *dst,
+static inline bool dsa_tree_offloads_bridge_port(struct dsa_switch *ds,
 						 const struct net_device *dev)
 {
 	struct dsa_port *dp;
 
-	list_for_each_entry(dp, &dst->ports, list)
+	list_for_each_entry(dp, &ds->ports, list)
 		if (dsa_port_offloads_bridge_port(dp, dev))
 			return true;
 
@@ -785,22 +760,22 @@ static inline bool dsa_tree_offloads_bridge_port(struct dsa_switch_tree *dst,
 
 /* Returns true if any port of this tree offloads the given bridge */
 static inline bool
-dsa_tree_offloads_bridge_dev(struct dsa_switch_tree *dst,
+dsa_tree_offloads_bridge_dev(struct dsa_switch *ds,
 			     const struct net_device *bridge_dev)
 {
 	struct dsa_port *dp;
 
-	list_for_each_entry(dp, &dst->ports, list)
+	list_for_each_entry(dp, &ds->ports, list)
 		if (dsa_port_offloads_bridge_dev(dp, bridge_dev))
 			return true;
 
 	return false;
 }
 
-static inline bool dsa_port_tree_same(const struct dsa_port *a,
+static inline bool dsa_port_switch_same(const struct dsa_port *a,
 				      const struct dsa_port *b)
 {
-	return a->ds->dst == b->ds->dst;
+	return a->ds == b->ds;
 }
 
 typedef int dsa_fdb_dump_cb_t(const unsigned char *addr, u16 vid,
@@ -1335,7 +1310,6 @@ static inline void dsa_tag_generic_flow_dissect(const struct sk_buff *skb,
 void dsa_unregister_switch(struct dsa_switch *ds);
 int dsa_register_switch(struct dsa_switch *ds);
 void dsa_switch_shutdown(struct dsa_switch *ds);
-struct dsa_switch *dsa_switch_find(int tree_index, int sw_index);
 void dsa_flush_workqueue(void);
 #ifdef CONFIG_PM_SLEEP
 int dsa_switch_suspend(struct dsa_switch *ds);

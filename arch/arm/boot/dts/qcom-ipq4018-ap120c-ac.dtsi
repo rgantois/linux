@@ -10,6 +10,7 @@
 
 	aliases {
 		serial0 = &blsp1_uart1;
+		ethernet1 = &swport5;
 	};
 
 	chosen {
@@ -240,6 +241,24 @@
 
 	pinctrl-0 = <&mdio_pins>;
 	pinctrl-names = "default";
+};
+
+&gmac {
+	status = "okay";
+};
+
+&switch {
+	status = "okay";
+};
+
+&swport4 {
+	status = "okay";
+
+	label = "lan";
+};
+
+&swport5 {
+	status = "okay";
 };
 
 &wifi0 {

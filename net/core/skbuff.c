@@ -62,8 +62,10 @@
 #include <linux/if_vlan.h>
 #include <linux/mpls.h>
 #include <linux/kcov.h>
+#include <linux/dsa/oob.h>
 
 #include <net/protocol.h>
+#include <net/dsa.h>
 #include <net/dst.h>
 #include <net/sock.h>
 #include <net/checksum.h>
@@ -4716,6 +4718,7 @@ static const u8 skb_ext_type_len[] = {
 #if IS_ENABLED(CONFIG_MCTP_FLOWS)
 	[SKB_EXT_MCTP] = SKB_EXT_CHUNKSIZEOF(struct mctp_flow),
 #endif
+	[SKB_EXT_DSA_OOB] = SKB_EXT_CHUNKSIZEOF(struct dsa_oob_tag_info),
 };
 
 static __always_inline unsigned int skb_ext_total_length(void)
@@ -4736,6 +4739,7 @@ static __always_inline unsigned int skb_ext_total_length(void)
 #if IS_ENABLED(CONFIG_MCTP_FLOWS)
 		skb_ext_type_len[SKB_EXT_MCTP] +
 #endif
+		skb_ext_type_len[SKB_EXT_DSA_OOB] +
 		0;
 }
 

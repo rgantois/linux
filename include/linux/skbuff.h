@@ -4629,6 +4629,7 @@ enum skb_ext_id {
 #if IS_ENABLED(CONFIG_MCTP_FLOWS)
 	SKB_EXT_MCTP,
 #endif
+	SKB_EXT_DSA_OOB,
 	SKB_EXT_NUM, /* must be last */
 };
 

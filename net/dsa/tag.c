@@ -16,9 +16,6 @@
 #include "slave.h"
 #include "tag.h"
 
-static LIST_HEAD(dsa_tag_drivers_list);
-static DEFINE_MUTEX(dsa_tag_drivers_lock);
-
 /* Determine if we should defer delivery of skb until we have a rx timestamp.
  *
  * Called from dsa_switch_rcv. For now, this will only work if tagging is
@@ -129,115 +126,8 @@ struct packet_type dsa_pack_type __read_mostly = {
 	.func	= dsa_switch_rcv,
 };
 
-static void dsa_tag_driver_register(struct dsa_tag_driver *dsa_tag_driver,
-				    struct module *owner)
-{
-	dsa_tag_driver->owner = owner;
-
-	mutex_lock(&dsa_tag_drivers_lock);
-	list_add_tail(&dsa_tag_driver->list, &dsa_tag_drivers_list);
-	mutex_unlock(&dsa_tag_drivers_lock);
-}
-
-void dsa_tag_drivers_register(struct dsa_tag_driver *dsa_tag_driver_array[],
-			      unsigned int count, struct module *owner)
-{
-	unsigned int i;
-
-	for (i = 0; i < count; i++)
-		dsa_tag_driver_register(dsa_tag_driver_array[i], owner);
-}
-
-static void dsa_tag_driver_unregister(struct dsa_tag_driver *dsa_tag_driver)
-{
-	mutex_lock(&dsa_tag_drivers_lock);
-	list_del(&dsa_tag_driver->list);
-	mutex_unlock(&dsa_tag_drivers_lock);
-}
-EXPORT_SYMBOL_GPL(dsa_tag_drivers_register);
-
-void dsa_tag_drivers_unregister(struct dsa_tag_driver *dsa_tag_driver_array[],
-				unsigned int count)
-{
-	unsigned int i;
-
-	for (i = 0; i < count; i++)
-		dsa_tag_driver_unregister(dsa_tag_driver_array[i]);
-}
-EXPORT_SYMBOL_GPL(dsa_tag_drivers_unregister);
-
 const char *dsa_tag_protocol_to_str(const struct dsa_device_ops *ops)
 {
 	return ops->name;
 };
 
-/* Function takes a reference on the module owning the tagger,
- * so dsa_tag_driver_put must be called afterwards.
- */
-const struct dsa_device_ops *dsa_tag_driver_get_by_name(const char *name)
-{
-	const struct dsa_device_ops *ops = ERR_PTR(-ENOPROTOOPT);
-	struct dsa_tag_driver *dsa_tag_driver;
-
-	request_module("%s%s", DSA_TAG_DRIVER_ALIAS, name);
-
-	mutex_lock(&dsa_tag_drivers_lock);
-	list_for_each_entry(dsa_tag_driver, &dsa_tag_drivers_list, list) {
-		const struct dsa_device_ops *tmp = dsa_tag_driver->ops;
-
-		if (strcmp(name, tmp->name))
-			continue;
-
-		if (!try_module_get(dsa_tag_driver->owner))
-			break;
-
-		ops = tmp;
-		break;
-	}
-	mutex_unlock(&dsa_tag_drivers_lock);
-
-	return ops;
-}
-
-const struct dsa_device_ops *dsa_tag_driver_get_by_id(int tag_protocol)
-{
-	struct dsa_tag_driver *dsa_tag_driver;
-	const struct dsa_device_ops *ops;
-	bool found = false;
-
-	request_module("%sid-%d", DSA_TAG_DRIVER_ALIAS, tag_protocol);
-
-	mutex_lock(&dsa_tag_drivers_lock);
-	list_for_each_entry(dsa_tag_driver, &dsa_tag_drivers_list, list) {
-		ops = dsa_tag_driver->ops;
-		if (ops->proto == tag_protocol) {
-			found = true;
-			break;
-		}
-	}
-
-	if (found) {
-		if (!try_module_get(dsa_tag_driver->owner))
-			ops = ERR_PTR(-ENOPROTOOPT);
-	} else {
-		ops = ERR_PTR(-ENOPROTOOPT);
-	}
-
-	mutex_unlock(&dsa_tag_drivers_lock);
-
-	return ops;
-}
-
-void dsa_tag_driver_put(const struct dsa_device_ops *ops)
-{
-	struct dsa_tag_driver *dsa_tag_driver;
-
-	mutex_lock(&dsa_tag_drivers_lock);
-	list_for_each_entry(dsa_tag_driver, &dsa_tag_drivers_list, list) {
-		if (dsa_tag_driver->ops == ops) {
-			module_put(dsa_tag_driver->owner);
-			break;
-		}
-	}
-	mutex_unlock(&dsa_tag_drivers_lock);
-}
