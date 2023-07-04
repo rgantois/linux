@@ -1073,6 +1073,7 @@ static void phy_link_change(struct phy_device *phydev, bool up)
 {
 	struct net_device *netdev = phydev->attached_dev;
 
+	pr_info("phy_link_change\n");
 	if (up)
 		netif_carrier_on(netdev);
 	else
@@ -1435,11 +1436,15 @@ int phy_attach_direct(struct net_device *dev, struct phy_device *phydev,
 	bool using_genphy = false;
 	int err;
 
+
+
 	/* For Ethernet device drivers that register their own MDIO bus, we
 	 * will have bus->owner match ndev_mod, so we do not want to increment
 	 * our own module->refcnt here, otherwise we would not be able to
 	 * unload later on.
 	 */
+	pr_info("dev parent name: %s\n", dev->dev.parent->of_node->name);
+	pr_info("dev parent driver is NULL?: %px\n", dev->dev.parent->driver);
 	if (dev)
 		ndev_owner = dev->dev.parent->driver->owner;
 	if (ndev_owner != bus->owner && !try_module_get(bus->owner)) {

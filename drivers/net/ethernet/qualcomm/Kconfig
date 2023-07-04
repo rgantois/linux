@@ -66,6 +66,7 @@ config QCOM_IPQ4019_ESS_EDMA
 	depends on (OF && ARCH_QCOM) || COMPILE_TEST
 	select PHYLINK
 	select NET_DSA_TAG_OOB
+	select NET_SWITCHDEV
 	help
 	  This driver supports the Qualcomm Atheros IPQ40xx built-in
 	  ESS EDMA ethernet controller.

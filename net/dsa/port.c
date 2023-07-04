@@ -11,11 +11,29 @@
 #include <linux/notifier.h>
 #include <linux/of_mdio.h>
 #include <linux/of_net.h>
+#include <linux/dsa/oob.h>
 
 #include "dsa.h"
+#include "master.h"
 #include "port.h"
 #include "slave.h"
 #include "switch.h"
+#include "tag.h"
+
+struct sk_buff *oob_tag_rcv(struct sk_buff *skb,
+				   struct net_device *dev)
+{
+	struct dsa_oob_tag_info *tag_info = skb_ext_find(skb, SKB_EXT_DSA_OOB);
+
+	if (!tag_info)
+		return NULL;
+
+	skb->dev = dsa_master_find_slave(dev, 0, tag_info->port);
+	if (!skb->dev)
+		return NULL;
+
+	return skb;
+}
 
 /**
  * dsa_port_notify - Notify the switching fabric of changes to a port
@@ -1527,11 +1545,9 @@ rewind_old_bridge:
 	return err;
 }
 
-void dsa_port_set_tag_protocol(struct dsa_port *cpu_dp,
-			       const struct dsa_device_ops *tag_ops)
+void dsa_port_set_tag_protocol(struct dsa_port *cpu_dp)
 {
-	cpu_dp->rcv = tag_ops->rcv;
-	cpu_dp->tag_ops = tag_ops;
+	cpu_dp->rcv = oob_tag_rcv;
 }
 
 static struct phy_device *dsa_port_get_phy_device(struct dsa_port *dp)

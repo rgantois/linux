@@ -94,7 +94,6 @@ struct dsa_notifier_mtu_info {
 
 /* DSA_NOTIFIER_TAG_PROTO_* */
 struct dsa_notifier_tag_proto_info {
-	const struct dsa_device_ops *tag_ops;
 };
 
 /* DSA_NOTIFIER_TAG_8021Q_VLAN_* */

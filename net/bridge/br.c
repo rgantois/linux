@@ -225,6 +225,7 @@ static int br_switchdev_blocking_event(struct notifier_block *nb,
 		err = br_switchdev_port_offload(p, b->dev, b->ctx,
 						b->atomic_nb, b->blocking_nb,
 						b->tx_fwd_offload, extack);
+		pr_err("result of br_switchdev_port_offload: %d\n", err);
 		err = notifier_from_errno(err);
 		break;
 	case SWITCHDEV_BRPORT_UNOFFLOADED:

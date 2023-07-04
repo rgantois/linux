@@ -13,6 +13,7 @@
 #include <linux/gpio.h>
 #include <linux/leds.h>
 #include <linux/dsa/tag_qca.h>
+#include <net/dsa.h>
 
 #define QCA8K_ETHERNET_MDIO_PRIORITY			7
 #define QCA8K_ETHERNET_PHY_PRIORITY			6
@@ -278,6 +279,7 @@
  * 7th bit is to enable trunk port
  */
 #define QCA8K_REG_GOL_TRUNK_SHIFT(_i)			((_i) * 8)
+#define QCA8K_REG_GOL_TRUNK_EN_SHIFT(_i)			(((_i) * 8) + 7)
 #define QCA8K_REG_GOL_TRUNK_EN_MASK			BIT(7)
 #define QCA8K_REG_GOL_TRUNK_EN(_i)			(QCA8K_REG_GOL_TRUNK_EN_MASK << QCA8K_REG_GOL_TRUNK_SHIFT(_i))
 #define QCA8K_REG_GOL_TRUNK_MEMBER_MASK			GENMASK(6, 0)
@@ -291,6 +293,7 @@
 #define QCA8K_REG_GOL_MEM_ID_SHIFT(_i)			((_i) * 4)
 /* Complex shift: FIRST shift for port THEN shift for trunk */
 #define QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(_i, _j)	(QCA8K_REG_GOL_MEM_ID_SHIFT(_j) + QCA8K_REG_GOL_TRUNK_ID_SHIFT(_i))
+#define QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_SHIFT(_i, _j) (QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(_i, _j) + 3)
 #define QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN(_i, _j)	(QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_MASK << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(_i, _j))
 #define QCA8K_REG_GOL_TRUNK_ID_MEM_ID_PORT(_i, _j)	(QCA8K_REG_GOL_TRUNK_ID_MEM_ID_PORT_MASK << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(_i, _j))
 
@@ -610,6 +613,8 @@ int qca8k_port_fdb_del(struct dsa_switch *ds, int port,
 		       struct dsa_db db);
 int qca8k_port_fdb_dump(struct dsa_switch *ds, int port,
 			dsa_fdb_dump_cb_t *cb, void *data);
+int qca8k_fdb_next(struct qca8k_priv *priv, struct qca8k_fdb *fdb,
+			  int port);
 
 /* Common MDB function */
 int qca8k_port_mdb_add(struct dsa_switch *ds, int port,
@@ -632,8 +637,11 @@ int qca8k_port_vlan_filtering(struct dsa_switch *ds, int port, bool vlan_filteri
 int qca8k_port_vlan_add(struct dsa_switch *ds, int port,
 			const struct switchdev_obj_port_vlan *vlan,
 			struct netlink_ext_ack *extack);
+int qca8k_vlan_add(struct qca8k_priv *priv, u8 port, u16 vid,
+			  bool untagged);
 int qca8k_port_vlan_del(struct dsa_switch *ds, int port,
 			const struct switchdev_obj_port_vlan *vlan);
+int qca8k_vlan_del(struct qca8k_priv *priv, u8 port, u16 vid);
 
 /* Common port LAG function */
 int qca8k_port_lag_join(struct dsa_switch *ds, int port, struct dsa_lag lag,
@@ -641,5 +649,7 @@ int qca8k_port_lag_join(struct dsa_switch *ds, int port, struct dsa_lag lag,
 			struct netlink_ext_ack *extack);
 int qca8k_port_lag_leave(struct dsa_switch *ds, int port,
 			 struct dsa_lag lag);
+int qca8k_fdb_access(struct qca8k_priv *priv, enum qca8k_fdb_cmd cmd,
+			    int port);
 
 #endif /* __QCA8K_H */

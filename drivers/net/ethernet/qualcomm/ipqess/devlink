@@ -1,0 +1,54 @@
+ipqess_edma.c:	sw->edma = edma;
+ipqess_edma.c:	sw->edma = edma;
+ipqess_edma.c:	netdev = sw->napi_leader;
+ipqess_edma.c:		port = sw->port_list[i];
+ipqess_phylink.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_phylink.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_phylink.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_port.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_port.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_port.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_port.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_port.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_port.c:	if (port->sw->port0_enabled)
+ipqess_port.c:	if (port->sw->port0_enabled)
+ipqess_port.c:	ret = ipqess_port_vlan_add(port->sw->priv, port->index, &vlan, &extack);
+ipqess_port.c:	ret = ipqess_port_vlan_add(port->sw->priv, 0, &vlan, &extack);
+ipqess_port.c:	err = ipqess_port_vlan_del(port->sw->priv, port->index, &vlan);
+ipqess_port.c:	err = ipqess_port_vlan_del(port->sw->priv, 0, &vlan);
+ipqess_port.c:	err = ipqess_write_vlan_filtering(port->sw->priv, port->index,
+ipqess_port.c:	err = ipqess_write_vlan_filtering(port->sw->priv, port->index,
+ipqess_port.c:	struct qca8k_priv *priv = sw->priv;
+ipqess_port.c:		other_port = sw->port_list[i];
+ipqess_port.c:		other_port = sw->port_list[i - 1];
+ipqess_port.c:		other_port = sw->port_list[i - 1];
+ipqess_port.c:	struct qca8k_priv *priv = sw->priv;
+ipqess_port.c:		other_port = sw->port_list[i - 1];
+ipqess_port.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_port.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_port.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_port.c:	struct qca8k_priv *priv = port->sw->priv;
+ipqess_port.c:	struct devlink *dl = port->sw->devlink;
+ipqess_port.c:	struct qca8k_priv *priv = sw->priv;
+ipqess_port.c:	if (!sw->napi_leader) 
+ipqess_port.c:	if (!sw->napi_leader)
+ipqess_port.c:			sw->napi_leader = netdev;
+ipqess_port.c:	sw->port_list[port->qid] = port;
+ipqess_port.c:		port = sw->port_list[i];
+ipqess_port.c:		port = sw->port_list[i];
+ipqess_switch.c:	dl = devlink_alloc(&ipqess_devlink_ops, sizeof(*dl_priv), sw->priv->dev);
+ipqess_switch.c:	sw->devlink = dl;
+ipqess_switch.c:	dl_priv = devlink_priv(sw->devlink);
+ipqess_switch.c:		port = sw->port_list[i];
+ipqess_switch.c:	struct qca8k_priv *priv = sw->priv;
+ipqess_switch.c:		dev_err(sw->priv->dev, "received out-of-bounds port id %d\n", port_id);
+ipqess_switch.c:	port = sw->port_list[qid];
+ipqess_switch.c:		dev_warn(sw->priv->dev, "received port id  %d targeting \
+ipqess_switch.c:	sw->priv = priv;
+ipqess_switch.c:	sw->port0_enabled = false;
+ipqess_switch.c:	ret = qca8k_read_switch_id(sw->priv);
+ipqess_switch.c:		sw->port_list[i] = NULL;
+ipqess_switch.c:	if (!sw->napi_leader) {
+ipqess_switch.c:	ret = ipqess_switch_setup(sw->priv);
+ipqess_switch.c:	devlink_register(sw->devlink);
+ipqess_switch.c:	sw->port0_enabled = true;

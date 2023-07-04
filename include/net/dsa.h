@@ -28,88 +28,7 @@ struct phy_device;
 struct fixed_phy_status;
 struct phylink_link_state;
 
-#define DSA_TAG_PROTO_NONE_VALUE		0
-#define DSA_TAG_PROTO_BRCM_VALUE		1
-#define DSA_TAG_PROTO_BRCM_PREPEND_VALUE	2
-#define DSA_TAG_PROTO_DSA_VALUE			3
-#define DSA_TAG_PROTO_EDSA_VALUE		4
-#define DSA_TAG_PROTO_GSWIP_VALUE		5
-#define DSA_TAG_PROTO_KSZ9477_VALUE		6
-#define DSA_TAG_PROTO_KSZ9893_VALUE		7
-#define DSA_TAG_PROTO_LAN9303_VALUE		8
-#define DSA_TAG_PROTO_MTK_VALUE			9
-#define DSA_TAG_PROTO_QCA_VALUE			10
-#define DSA_TAG_PROTO_TRAILER_VALUE		11
-#define DSA_TAG_PROTO_8021Q_VALUE		12
-#define DSA_TAG_PROTO_SJA1105_VALUE		13
-#define DSA_TAG_PROTO_KSZ8795_VALUE		14
-#define DSA_TAG_PROTO_OCELOT_VALUE		15
-#define DSA_TAG_PROTO_AR9331_VALUE		16
-#define DSA_TAG_PROTO_RTL4_A_VALUE		17
-#define DSA_TAG_PROTO_HELLCREEK_VALUE		18
-#define DSA_TAG_PROTO_XRS700X_VALUE		19
-#define DSA_TAG_PROTO_OCELOT_8021Q_VALUE	20
-#define DSA_TAG_PROTO_SEVILLE_VALUE		21
-#define DSA_TAG_PROTO_BRCM_LEGACY_VALUE		22
-#define DSA_TAG_PROTO_SJA1110_VALUE		23
-#define DSA_TAG_PROTO_RTL8_4_VALUE		24
-#define DSA_TAG_PROTO_RTL8_4T_VALUE		25
-#define DSA_TAG_PROTO_RZN1_A5PSW_VALUE		26
-#define DSA_TAG_PROTO_LAN937X_VALUE		27
-#define DSA_TAG_PROTO_OOB_VALUE			28
-
-enum dsa_tag_protocol {
-	DSA_TAG_PROTO_NONE		= DSA_TAG_PROTO_NONE_VALUE,
-	DSA_TAG_PROTO_BRCM		= DSA_TAG_PROTO_BRCM_VALUE,
-	DSA_TAG_PROTO_BRCM_LEGACY	= DSA_TAG_PROTO_BRCM_LEGACY_VALUE,
-	DSA_TAG_PROTO_BRCM_PREPEND	= DSA_TAG_PROTO_BRCM_PREPEND_VALUE,
-	DSA_TAG_PROTO_DSA		= DSA_TAG_PROTO_DSA_VALUE,
-	DSA_TAG_PROTO_EDSA		= DSA_TAG_PROTO_EDSA_VALUE,
-	DSA_TAG_PROTO_GSWIP		= DSA_TAG_PROTO_GSWIP_VALUE,
-	DSA_TAG_PROTO_KSZ9477		= DSA_TAG_PROTO_KSZ9477_VALUE,
-	DSA_TAG_PROTO_KSZ9893		= DSA_TAG_PROTO_KSZ9893_VALUE,
-	DSA_TAG_PROTO_LAN9303		= DSA_TAG_PROTO_LAN9303_VALUE,
-	DSA_TAG_PROTO_MTK		= DSA_TAG_PROTO_MTK_VALUE,
-	DSA_TAG_PROTO_QCA		= DSA_TAG_PROTO_QCA_VALUE,
-	DSA_TAG_PROTO_TRAILER		= DSA_TAG_PROTO_TRAILER_VALUE,
-	DSA_TAG_PROTO_8021Q		= DSA_TAG_PROTO_8021Q_VALUE,
-	DSA_TAG_PROTO_SJA1105		= DSA_TAG_PROTO_SJA1105_VALUE,
-	DSA_TAG_PROTO_KSZ8795		= DSA_TAG_PROTO_KSZ8795_VALUE,
-	DSA_TAG_PROTO_OCELOT		= DSA_TAG_PROTO_OCELOT_VALUE,
-	DSA_TAG_PROTO_AR9331		= DSA_TAG_PROTO_AR9331_VALUE,
-	DSA_TAG_PROTO_RTL4_A		= DSA_TAG_PROTO_RTL4_A_VALUE,
-	DSA_TAG_PROTO_HELLCREEK		= DSA_TAG_PROTO_HELLCREEK_VALUE,
-	DSA_TAG_PROTO_XRS700X		= DSA_TAG_PROTO_XRS700X_VALUE,
-	DSA_TAG_PROTO_OCELOT_8021Q	= DSA_TAG_PROTO_OCELOT_8021Q_VALUE,
-	DSA_TAG_PROTO_SEVILLE		= DSA_TAG_PROTO_SEVILLE_VALUE,
-	DSA_TAG_PROTO_SJA1110		= DSA_TAG_PROTO_SJA1110_VALUE,
-	DSA_TAG_PROTO_RTL8_4		= DSA_TAG_PROTO_RTL8_4_VALUE,
-	DSA_TAG_PROTO_RTL8_4T		= DSA_TAG_PROTO_RTL8_4T_VALUE,
-	DSA_TAG_PROTO_RZN1_A5PSW	= DSA_TAG_PROTO_RZN1_A5PSW_VALUE,
-	DSA_TAG_PROTO_LAN937X		= DSA_TAG_PROTO_LAN937X_VALUE,
-	DSA_TAG_PROTO_OOB		= DSA_TAG_PROTO_OOB_VALUE,
-};
-
 struct dsa_switch;
-
-struct dsa_device_ops {
-	struct sk_buff *(*xmit)(struct sk_buff *skb, struct net_device *dev);
-	struct sk_buff *(*rcv)(struct sk_buff *skb, struct net_device *dev);
-	void (*flow_dissect)(const struct sk_buff *skb, __be16 *proto,
-			     int *offset);
-	int (*connect)(struct dsa_switch *ds);
-	void (*disconnect)(struct dsa_switch *ds);
-	unsigned int needed_headroom;
-	unsigned int needed_tailroom;
-	const char *name;
-	enum dsa_tag_protocol proto;
-	/* Some tagging protocols either mangle or shift the destination MAC
-	 * address, in which case the DSA master would drop packets on ingress
-	 * if what it understands out of the destination MAC address is not in
-	 * its RX filter.
-	 */
-	bool promisc_on_master;
-};
 
 struct dsa_lag {
 	struct net_device *dev;
@@ -176,11 +95,6 @@ struct dsa_port {
 		struct net_device *master;
 		struct net_device *slave;
 	};
-
-	/* Copy of the tagging protocol operations, for quicker access
-	 * in the data path. Valid only for the CPU ports.
-	 */
-	const struct dsa_device_ops *tag_ops;
 
 	/* Copies for faster access in master receive hot path */
 	struct sk_buff *(*rcv)(struct sk_buff *skb, struct net_device *dev);
@@ -319,15 +233,6 @@ struct dsa_switch {
 
 	/* List of DSA links composing the routing table */
 	struct list_head rtable;
-
-	/* Tagging protocol operations */
-	const struct dsa_device_ops *tag_ops;
-
-	/* Default tagging protocol preferred by the switches in this
-	 * tree.
-	 */
-	enum dsa_tag_protocol default_proto;
-
 
 	/* Disallow bridge core from requesting different VLAN awareness
 	 * settings on ports if not hardware-supported
@@ -782,25 +687,10 @@ typedef int dsa_fdb_dump_cb_t(const unsigned char *addr, u16 vid,
 			      bool is_static, void *data);
 struct dsa_switch_ops {
 	/*
-	 * Tagging protocol helpers called for the CPU ports and DSA links.
-	 * @get_tag_protocol retrieves the initial tagging protocol and is
-	 * mandatory. Switches which can operate using multiple tagging
-	 * protocols should implement @change_tag_protocol and report in
-	 * @get_tag_protocol the tagger in current use.
-	 */
-	enum dsa_tag_protocol (*get_tag_protocol)(struct dsa_switch *ds,
-						  int port,
-						  enum dsa_tag_protocol mprot);
-	int	(*change_tag_protocol)(struct dsa_switch *ds,
-				       enum dsa_tag_protocol proto);
-	/*
 	 * Method for switch drivers to connect to the tagging protocol driver
 	 * in current use. The switch driver can provide handlers for certain
 	 * types of packets for switch management.
 	 */
-	int	(*connect_tag_protocol)(struct dsa_switch *ds,
-					enum dsa_tag_protocol proto);
-
 	int	(*port_change_master)(struct dsa_switch *ds, int port,
 				      struct net_device *master,
 				      struct netlink_ext_ack *extack);
@@ -1298,13 +1188,6 @@ static inline bool netdev_uses_dsa(const struct net_device *dev)
 static inline void dsa_tag_generic_flow_dissect(const struct sk_buff *skb,
 						__be16 *proto, int *offset)
 {
-#if IS_ENABLED(CONFIG_NET_DSA)
-	const struct dsa_device_ops *ops = skb->dev->dsa_ptr->tag_ops;
-	int tag_len = ops->needed_headroom;
-
-	*offset = tag_len;
-	*proto = ((__be16 *)skb->data)[(tag_len / 2) - 1];
-#endif
 }
 
 void dsa_unregister_switch(struct dsa_switch *ds);

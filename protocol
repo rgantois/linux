@@ -1,0 +1,123 @@
+Documentation/admin-guide/bug-hunting.rst:         mov        0x8(%ebp), %ebx         ! %ebx = skb->sk
+Documentation/bpf/map_array.rst:                    __sync_fetch_and_add(value, skb->len);
+Documentation/bpf/map_sockmap.rst:		return skb->len;
+Documentation/bpf/map_sockmap.rst:		__u32 lport = skb->local_port;
+Documentation/bpf/map_sockmap.rst:		key->src_ip = skb->remote_ip4;
+Documentation/bpf/map_sockmap.rst:		key->dst_ip = skb->local_ip4;
+Documentation/bpf/map_sockmap.rst:		key->src_port = skb->remote_port >> 16;
+Documentation/bpf/map_sockmap.rst:		key->dst_port = (bpf_htonl(skb->local_port)) >> 16;
+Documentation/bpf/prog_flow_dissector.rst:  skb->data + flow_keys->nhoff point to the first byte of L3_HEADER
+Documentation/bpf/prog_flow_dissector.rst:  skb->data + flow_keys->nhoff point the to first byte of TCI
+Documentation/bpf/prog_flow_dissector.rst:  skb->data + flow_keys->nhoff point the to first byte of L3_HEADER
+Documentation/bpf/verifier.rst:			skb->data.
+Documentation/bpf/verifier.rst:			skb->data + headlen; arithmetic forbidden.
+Documentation/bpf/verifier.rst:data via skb->data and skb->data_end pointers.
+Documentation/bpf/verifier.rst:    1:  r4 = *(u32 *)(r1 +80)  /* load skb->data_end */
+Documentation/bpf/verifier.rst:    2:  r3 = *(u32 *)(r1 +76)  /* load skb->data */
+Documentation/bpf/verifier.rst:did check ``if (skb->data + 14 > skb->data_end) goto err`` at insn #5 which
+Documentation/bpf/verifier.rst:means that in the fall-through case the register R3 (which points to skb->data)
+Documentation/bpf/verifier.rst:it now points to ``skb->data + 14`` and accessible range is [R5, R5 + 14 - 14)
+Documentation/bpf/verifier.rst:    9:  r3 = *(u32 *)(r1 +76) /* load skb->data */
+Documentation/bpf/verifier.rst:    17:  r1 = *(u32 *)(r1 +80) /* load skb->data_end */
+Documentation/bpf/verifier.rst:Operation ``r3 += rX`` may overflow and become less than original skb->data,
+Documentation/bpf/verifier.rst:against skb->data_end will not give us 'range' information, so attempts to read
+Documentation/bpf/verifier.rst:  void *data = (void *)(long)skb->data;
+Documentation/bpf/verifier.rst:  void *data_end = (void *)(long)skb->data_end;
+Documentation/networking/checksum-offloads.rst:checksum defined by the sk_buff fields skb->csum_start and skb->csum_offset.
+Documentation/networking/checksum-offloads.rst:skb->csum_start and skb->csum_offset as described above, and setting
+Documentation/networking/checksum-offloads.rst:skb->csum_not_inet: see skbuff.h comment (section 'D') for more details.
+Documentation/networking/device_drivers/ethernet/amazon/ena.rst:- Maps data buffers (``skb->data`` and frags).
+Documentation/networking/device_drivers/ethernet/ti/cpsw.rst:- Map skb-priority to txq is not enough, also skb-priority to l2 prio
+Documentation/networking/device_drivers/ethernet/ti/cpsw.rst:	// Map skb->priority to traffic class:
+Documentation/networking/device_drivers/ethernet/ti/cpsw.rst:	// Map skb->priority to L2 prio, 1 to 1
+Documentation/networking/device_drivers/ethernet/ti/cpsw.rst:	// Map skb->priority to traffic class for Eth0:
+Documentation/networking/device_drivers/ethernet/ti/cpsw.rst:	// Map skb->priority to L2 prio for Eth0.100, one to one
+Documentation/networking/device_drivers/ethernet/ti/cpsw.rst:	// Map skb->priority to traffic class for Eth1:
+Documentation/networking/device_drivers/ethernet/ti/cpsw.rst:	// Map skb->priority to L2 prio for Eth1.100, one to one
+Documentation/networking/driver.rst:		netdev_tx_sent_queue(txq, skb->len);
+Documentation/networking/dsa/dsa.rst:The passed ``struct sk_buff *skb`` has ``skb->data`` pointing at
+Documentation/networking/dsa/dsa.rst:passed ``struct sk_buff *skb`` has ``skb->data`` pointing at
+Documentation/networking/dsa/dsa.rst:method is to consume the frame header, adjust ``skb->data`` to really point at
+Documentation/networking/dsa/dsa.rst:the first octet after the EtherType, and to change ``skb->dev`` to point to the
+Documentation/networking/dsa/dsa.rst:specific (and fake) Ethernet type (later becoming ``skb->protocol``) with the
+Documentation/networking/dsa/dsa.rst:                          -> skb->protocol = ETH_P_XDSA
+Documentation/networking/dsa/dsa.rst:packets and have ``skb->offload_fwd_mark`` set to true in the tag protocol
+Documentation/networking/filter.rst:  len                                   skb->len
+Documentation/networking/filter.rst:  proto                                 skb->protocol
+Documentation/networking/filter.rst:  type                                  skb->pkt_type
+Documentation/networking/filter.rst:  ifidx                                 skb->dev->ifindex
+Documentation/networking/filter.rst:  mark                                  skb->mark
+Documentation/networking/filter.rst:  queue                                 skb->queue_mapping
+Documentation/networking/filter.rst:  hatype                                skb->dev->type
+Documentation/networking/filter.rst:  rxhash                                skb->hash
+Documentation/networking/filter.rst:  vlan_tpid                             skb->vlan_proto
+Documentation/networking/gen_stats.rst:	mystruct->qstats.backlog += skb->pkt_len;
+Documentation/networking/ieee802154.rst:code via plain sk_buffs. On skb reception skb->cb must contain additional
+Documentation/networking/ieee802154.rst:the skb->cb is used to provide additional data to device's header_ops->create
+Documentation/networking/ieee802154.rst:store info in the skb->data on your own.
+Documentation/networking/lapb-module.rst:is expected that the data passed to the LAPB module has skb->data pointing
+Documentation/networking/lapb-module.rst:module will not perform any more actions on it. The skb->data pointer will
+Documentation/networking/lapb-module.rst:The skb->data pointer will be pointing to the first byte of the LAPB header.
+Documentation/networking/mctp.rst:   - a skb: during route output, stored in ``skb->cb``.
+Documentation/networking/multiqueue.rst:bands and queues based on the value in skb->queue_mapping.  Use this field in
+Documentation/networking/multiqueue.rst:hardware.  Once the association is made, any skb with skb->queue_mapping set,
+Documentation/networking/netdev-features.rst:chained skbs (skb->next/prev list).
+Documentation/networking/rxrpc.rst:     The skb->mark field indicates the type of message:
+Documentation/networking/scaling.rst:skb->hash and can be used elsewhere in the stack as a hash of the
+Documentation/networking/scaling.rst:skb->ooo_okay is set for a packet in the flow. This flag indicates that
+Documentation/networking/strparser.rst:    The skb->cb in the input skb is a struct strp_msg. Only
+Documentation/networking/strparser.rst:    The skb->cb in the input skb is a struct strp_msg. This
+Documentation/networking/strparser.rst:    the length of the message. skb->len - offset may be greater
+Documentation/networking/switchdev.rst:forwarded by setting the skb->offload_fwd_mark bit. The bridge driver will mark
+Documentation/networking/timestamping.rst:  in skb->cb and enqueue a tx skb queue. Typically, a switch will have a
+Documentation/networking/timestamping.rst:  enabled, and ``skb->dev->phydev->mii_ts`` exists, its ``.rxtstamp()`` hook
+Documentation/networking/vrf.rst:.. [2] Iptables on ingress supports PREROUTING with skb->dev set to the real
+Documentation/networking/vrf.rst:       ingress device and both INPUT and PREROUTING rules with skb->dev set to
+Documentation/translations/zh_CN/admin-guide/bug-hunting.rst:         mov        0x8(%ebp), %ebx         ! %ebx = skb->sk
+Documentation/translations/zh_TW/admin-guide/bug-hunting.rst:         mov        0x8(%ebp), %ebx         ! %ebx = skb->sk
+arch/m68k/emu/nfeth.c:	skb->dev = dev;
+arch/m68k/emu/nfeth.c:	nf_call(nfEtherID + XIF_READBLOCK, priv->ethX, virt_to_phys(skb->data),
+arch/m68k/emu/nfeth.c:	skb->protocol = eth_type_trans(skb, dev);
+arch/m68k/emu/nfeth.c:	data = skb->data;
+arch/m68k/emu/nfeth.c:	len = skb->len;
+arch/sparc/net/bpf_jit_32.h: *  %o4 : skb->len - skb->data_len
+arch/sparc/net/bpf_jit_32.h: *  %o5 : skb->data
+arch/sparc/net/bpf_jit_comp_32.c:			 *  %o4 = skb->len - skb->data_len
+arch/sparc/net/bpf_jit_comp_32.c:			 *  %o5 = skb->data
+arch/um/drivers/daemon_kern.c:			    skb->dev->mtu + ETH_HEADER_OTHER);
+arch/um/drivers/daemon_kern.c:	return daemon_user_write(fd, skb->data, skb->len,
+arch/um/drivers/net_kern.c:		drop_skb->dev = dev;
+arch/um/drivers/net_kern.c:	skb->dev = dev;
+arch/um/drivers/net_kern.c:		skb->protocol = (*lp->protocol)(skb);
+arch/um/drivers/net_kern.c:		dev->stats.rx_bytes += skb->len;
+arch/um/drivers/net_kern.c:	if (len == skb->len) {
+arch/um/drivers/net_kern.c:		dev->stats.tx_bytes += skb->len;
+arch/um/drivers/net_kern.c:	return eth_type_trans(skb, skb->dev);
+arch/um/drivers/pcap_kern.c:			      skb->dev->mtu + ETH_HEADER_OTHER,
+arch/um/drivers/slip_kern.c:	return slip_user_read(fd, skb_mac_header(skb), skb->dev->mtu,
+arch/um/drivers/slip_kern.c:	return slip_user_write(fd, skb->data, skb->len,
+arch/um/drivers/slirp_kern.c:	return slirp_user_read(fd, skb_mac_header(skb), skb->dev->mtu,
+arch/um/drivers/slirp_kern.c:	return slirp_user_write(fd, skb->data, skb->len,
+arch/um/drivers/umcast_kern.c:			    skb->dev->mtu + ETH_HEADER_OTHER);
+arch/um/drivers/umcast_kern.c:	return umcast_user_write(fd, skb->data, skb->len,
+arch/um/drivers/vde_kern.c:				     skb->dev->mtu + ETH_HEADER_OTHER);
+arch/um/drivers/vde_kern.c:		return vde_user_write((void *)pri->conn, skb->data,
+arch/um/drivers/vde_kern.c:				      skb->len);
+arch/um/drivers/vector_kern.c:	iov[iov_index].iov_base = skb->data;
+arch/um/drivers/vector_kern.c:		iov[iov_index].iov_len = skb->len - skb->data_len;
+arch/um/drivers/vector_kern.c:		iov[iov_index].iov_len = skb->len;
+arch/um/drivers/vector_kern.c:		packet_len = skb->len;
+arch/um/drivers/vector_kern.c:		packet_len = skb->len;
+arch/um/drivers/vector_kern.c:		bytes_compl += skb->len;
+arch/um/drivers/vector_kern.c:					skb->ip_summed = CHECKSUM_UNNECESSARY;
+arch/um/drivers/vector_kern.c:			skb->protocol = eth_type_trans(skb, skb->dev);
+arch/um/drivers/vector_kern.c:			vp->dev->stats.rx_bytes += skb->len;
+arch/um/drivers/vector_kern.c:		vp->dev->stats.tx_bytes += skb->len;
+arch/um/drivers/vector_kern.c:					skb->ip_summed = CHECKSUM_UNNECESSARY;
+arch/um/drivers/vector_kern.c:			skb->protocol = eth_type_trans(skb, skb->dev);
+arch/um/drivers/vector_kern.c:			vp->dev->stats.rx_bytes += skb->len;
+arch/um/drivers/vector_kern.c:	netdev_sent_queue(vp->dev, skb->len);
+arch/um/os-Linux/drivers/ethertap_kern.c:			   skb->dev->mtu + 2 + ETH_HEADER_ETHERTAP);
+arch/um/os-Linux/drivers/ethertap_kern.c:	return net_send(fd, skb->data, skb->len);
+arch/um/os-Linux/drivers/tuntap_kern.c:			skb->dev->mtu + ETH_HEADER_OTHER);
+arch/um/os-Linux/drivers/tuntap_kern.c:	return net_write(fd, skb->data, skb->len);
