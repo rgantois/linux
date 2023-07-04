@@ -7,7 +7,6 @@
 #include <net/dsa.h>
 
 struct dsa_db;
-struct dsa_device_ops;
 struct dsa_lag;
 struct net_device;
 struct work_struct;

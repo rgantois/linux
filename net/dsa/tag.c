@@ -126,8 +126,3 @@ struct packet_type dsa_pack_type __read_mostly = {
 	.func	= dsa_switch_rcv,
 };
 
-const char *dsa_tag_protocol_to_str(const struct dsa_device_ops *ops)
-{
-	return ops->name;
-};
-

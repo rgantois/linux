@@ -37,13 +37,6 @@ static struct regmap_config qca8k_ipq4019_psgmii_phy_regmap_config = {
 	.max_register = 0x7fc,
 };
 
-static enum dsa_tag_protocol
-qca8k_ipq4019_get_tag_protocol(struct dsa_switch *ds, int port,
-			       enum dsa_tag_protocol mp)
-{
-	return DSA_TAG_PROTO_OOB;
-}
-
 static struct phylink_pcs *
 qca8k_ipq4019_phylink_mac_select_pcs(struct dsa_switch *ds, int port,
 				     phy_interface_t interface)
@@ -778,7 +771,6 @@ qca8k_ipq4019_setup(struct dsa_switch *ds)
 }
 
 static const struct dsa_switch_ops qca8k_ipq4019_switch_ops = {
-	.get_tag_protocol	= qca8k_ipq4019_get_tag_protocol,
 	.setup			= qca8k_ipq4019_setup,
 	.get_strings		= qca8k_get_strings,
 	.get_ethtool_stats	= qca8k_get_ethtool_stats,
