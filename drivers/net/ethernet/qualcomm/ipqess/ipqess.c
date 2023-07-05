@@ -27,22 +27,23 @@
 #include <net/ip6_checksum.h>
 
 #include "ipqess.h"
+#include "ipqess_port.h"
 
 #define IPQESS_RRD_SIZE		16
 #define IPQESS_NEXT_IDX(X, Y)  (((X) + 1) & ((Y) - 1))
 #define IPQESS_TX_DMA_BUF_LEN	0x3fff
 
-static void ipqess_w32(struct ipqess *ess, u32 reg, u32 val)
+static void ipqess_w32(struct ipqess_master *ess, u32 reg, u32 val)
 {
 	writel(val, ess->hw_addr + reg);
 }
 
-static u32 ipqess_r32(struct ipqess *ess, u16 reg)
+static u32 ipqess_r32(struct ipqess_master *ess, u16 reg)
 {
 	return readl(ess->hw_addr + reg);
 }
 
-static void ipqess_m32(struct ipqess *ess, u32 mask, u32 val, u16 reg)
+static void ipqess_m32(struct ipqess_master *ess, u32 mask, u32 val, u16 reg)
 {
 	u32 _val = ipqess_r32(ess, reg);
 
@@ -52,7 +53,7 @@ static void ipqess_m32(struct ipqess *ess, u32 mask, u32 val, u16 reg)
 	ipqess_w32(ess, reg, _val);
 }
 
-void ipqess_update_hw_stats(struct ipqess *ess)
+void ipqess_update_hw_stats(struct ipqess_master *ess)
 {
 	u32 *p;
 	u32 stat;
@@ -86,7 +87,7 @@ void ipqess_update_hw_stats(struct ipqess *ess)
 	}
 }
 
-static int ipqess_tx_ring_alloc(struct ipqess *ess)
+static int ipqess_tx_ring_alloc(struct ipqess_master *ess)
 {
 	struct device *dev = &ess->pdev->dev;
 	int i;
@@ -150,7 +151,7 @@ static int ipqess_tx_unmap_and_free(struct device *dev, struct ipqess_buf *buf)
 	return len;
 }
 
-static void ipqess_tx_ring_free(struct ipqess *ess)
+static void ipqess_tx_ring_free(struct ipqess_master *ess)
 {
 	int i;
 
@@ -241,7 +242,7 @@ static void ipqess_refill_work(struct work_struct *work)
 		schedule_work(&rx_refill->refill_work);
 }
 
-static int ipqess_rx_ring_alloc(struct ipqess *ess)
+static int ipqess_rx_ring_alloc(struct ipqess_master *ess)
 {
 	int i;
 
@@ -286,7 +287,7 @@ static int ipqess_rx_ring_alloc(struct ipqess *ess)
 	return 0;
 }
 
-static void ipqess_rx_ring_free(struct ipqess *ess)
+static void ipqess_rx_ring_free(struct ipqess_master *ess)
 {
 	int i;
 
@@ -308,7 +309,7 @@ static void ipqess_rx_ring_free(struct ipqess *ess)
 
 static struct net_device_stats *ipqess_get_stats(struct net_device *netdev)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 
 	spin_lock(&ess->stats_lock);
 	ipqess_update_hw_stats(ess);
@@ -410,9 +411,7 @@ static int ipqess_rx_poll(struct ipqess_rx_ring *rx_ring, int budget)
 					       le16_to_cpu(rd->rrd4));
 
 		if (likely(rx_ring->ess->dsa_ports)) {
-			tag_info = skb_ext_add(skb, SKB_EXT_DSA_OOB);
-			tag_info->port = FIELD_GET(IPQESS_RRD_PORT_ID_MASK,
-						   le16_to_cpu(rd->rrd1));
+			//insert tag
 		}
 
 		napi_gro_receive(&rx_ring->napi_rx, skb);
@@ -502,7 +501,7 @@ static int ipqess_rx_napi(struct napi_struct *napi, int budget)
 {
 	struct ipqess_rx_ring *rx_ring = container_of(napi, struct ipqess_rx_ring,
 						    napi_rx);
-	struct ipqess *ess = rx_ring->ess;
+	struct ipqess_master *ess = rx_ring->ess;
 	u32 rx_mask = BIT(rx_ring->idx);
 	int remaining_budget = budget;
 	int rx_done;
@@ -551,7 +550,7 @@ static irqreturn_t ipqess_interrupt_rx(int irq, void *priv)
 	return IRQ_HANDLED;
 }
 
-static void ipqess_irq_enable(struct ipqess *ess)
+static void ipqess_irq_enable(struct ipqess_master *ess)
 {
 	int i;
 
@@ -563,7 +562,7 @@ static void ipqess_irq_enable(struct ipqess *ess)
 	}
 }
 
-static void ipqess_irq_disable(struct ipqess *ess)
+static void ipqess_irq_disable(struct ipqess_master *ess)
 {
 	int i;
 
@@ -575,7 +574,7 @@ static void ipqess_irq_disable(struct ipqess *ess)
 
 static int __init ipqess_init(struct net_device *netdev)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 	struct device_node *of_node = ess->pdev->dev.of_node;
 	int ret;
 
@@ -588,14 +587,14 @@ static int __init ipqess_init(struct net_device *netdev)
 
 static void ipqess_uninit(struct net_device *netdev)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 
 	phylink_disconnect_phy(ess->phylink);
 }
 
 static int ipqess_open(struct net_device *netdev)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 	int i, err;
 
 	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
@@ -630,7 +629,7 @@ static int ipqess_open(struct net_device *netdev)
 
 static int ipqess_stop(struct net_device *netdev)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 	int i;
 
 	netif_tx_stop_all_queues(netdev);
@@ -646,7 +645,7 @@ static int ipqess_stop(struct net_device *netdev)
 
 static int ipqess_do_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 
 	return phylink_mii_ioctl(ess->phylink, ifr, cmd);
 }
@@ -693,7 +692,7 @@ static struct ipqess_tx_desc *ipqess_tx_desc_next(struct ipqess_tx_ring *tx_ring
 	return desc;
 }
 
-static void ipqess_rollback_tx(struct ipqess *eth,
+static void ipqess_rollback_tx(struct ipqess_master *eth,
 			       struct ipqess_tx_desc *first_desc, int ring_id)
 {
 	struct ipqess_tx_ring *tx_ring = &eth->tx_ring[ring_id];
@@ -715,25 +714,16 @@ static void ipqess_rollback_tx(struct ipqess *eth,
 	tx_ring->head = start_index;
 }
 
-static void ipqess_process_dsa_tag_sh(struct ipqess *ess, struct sk_buff *skb,
-				      u32 *word3)
+static void ipqess_process_dsa_tag_sh(struct ipqess_master *ess, struct sk_buff *skb,
+				      u32 *word3, u16 index)
 {
-	struct dsa_oob_tag_info *tag_info;
-
-	if (unlikely(!ess->dsa_ports))
-		return;
-
-	tag_info = skb_ext_find(skb, SKB_EXT_DSA_OOB);
-	if (!tag_info)
-		return;
-
-	*word3 |= tag_info->port << IPQESS_TPD_PORT_BITMAP_SHIFT;
+	*word3 |= index << IPQESS_TPD_PORT_BITMAP_SHIFT;
 	*word3 |= BIT(IPQESS_TPD_FROM_CPU_SHIFT);
 	*word3 |= 0x3e << IPQESS_TPD_PORT_BITMAP_SHIFT;
 }
 
 static int ipqess_tx_map_and_fill(struct ipqess_tx_ring *tx_ring,
-				  struct sk_buff *skb)
+				  struct sk_buff *skb, u16 index)
 {
 	struct ipqess_tx_desc *desc = NULL, *first_desc = NULL;
 	u32 word1 = 0, word3 = 0, lso_word1 = 0, svlan_tag = 0;
@@ -742,7 +732,7 @@ static int ipqess_tx_map_and_fill(struct ipqess_tx_ring *tx_ring,
 	u16 len;
 	int i;
 
-	ipqess_process_dsa_tag_sh(tx_ring->ess, skb, &word3);
+	ipqess_process_dsa_tag_sh(tx_ring->ess, skb, &word3, index);
 
 	if (skb_is_gso(skb)) {
 		if (skb_shinfo(skb)->gso_type & SKB_GSO_TCPV4) {
@@ -867,9 +857,9 @@ static void ipqess_kick_tx(struct ipqess_tx_ring *tx_ring)
 		   tx_ring->head);
 }
 
-static netdev_tx_t ipqess_xmit(struct sk_buff *skb, struct net_device *netdev)
+netdev_tx_t ipqess_master_xmit(struct sk_buff *skb, 
+		struct ipqess_master *ess, u16 index)
 {
-	struct ipqess *ess = netdev_priv(netdev);
 	struct ipqess_tx_ring *tx_ring;
 	int avail;
 	int tx_num;
@@ -879,8 +869,7 @@ static netdev_tx_t ipqess_xmit(struct sk_buff *skb, struct net_device *netdev)
 	tx_num = ipqess_cal_txd_req(skb);
 	avail = ipqess_tx_desc_available(tx_ring);
 	if (avail < tx_num) {
-		netdev_dbg(netdev,
-			   "stopping tx queue %d, avail=%d req=%d im=%x\n",
+		pr_debug("stopping tx queue %d, avail=%d req=%d im=%x\n",
 			   tx_ring->idx, avail, tx_num,
 			   ipqess_r32(tx_ring->ess,
 				      IPQESS_REG_TX_INT_MASK_Q(tx_ring->idx)));
@@ -890,7 +879,7 @@ static netdev_tx_t ipqess_xmit(struct sk_buff *skb, struct net_device *netdev)
 		return NETDEV_TX_BUSY;
 	}
 
-	ret = ipqess_tx_map_and_fill(tx_ring, skb);
+	ret = ipqess_tx_map_and_fill(tx_ring, skb, index);
 	if (ret) {
 		dev_kfree_skb_any(skb);
 		ess->stats.tx_errors++;
@@ -910,7 +899,7 @@ err_out:
 
 static int ipqess_set_mac_address(struct net_device *netdev, void *p)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 	const char *macaddr = netdev->dev_addr;
 	int ret = eth_mac_addr(netdev, p);
 
@@ -927,7 +916,7 @@ static int ipqess_set_mac_address(struct net_device *netdev, void *p)
 
 static void ipqess_tx_timeout(struct net_device *netdev, unsigned int txq_id)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 	struct ipqess_tx_ring *tr = &ess->tx_ring[txq_id];
 
 	netdev_warn(netdev, "TX timeout on queue %d\n", tr->idx);
@@ -939,7 +928,6 @@ static const struct net_device_ops ipqess_axi_netdev_ops = {
 	.ndo_open		= ipqess_open,
 	.ndo_stop		= ipqess_stop,
 	.ndo_do_ioctl		= ipqess_do_ioctl,
-	.ndo_start_xmit		= ipqess_xmit,
 	.ndo_get_stats		= ipqess_get_stats,
 	.ndo_set_mac_address	= ipqess_set_mac_address,
 	.ndo_tx_timeout		= ipqess_tx_timeout,
@@ -948,7 +936,7 @@ static const struct net_device_ops ipqess_axi_netdev_ops = {
 static int ipqess_netdevice_event(struct notifier_block *nb,
 				  unsigned long event, void *ptr)
 {
-	struct ipqess *ess = container_of(nb, struct ipqess, netdev_notifier);
+	struct ipqess_master *ess = container_of(nb, struct ipqess_master, netdev_notifier);
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct netdev_notifier_changeupper_info *info;
 
@@ -972,7 +960,7 @@ static int ipqess_netdevice_event(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-static void ipqess_hw_stop(struct ipqess *ess)
+static void ipqess_hw_stop(struct ipqess_master *ess)
 {
 	int i;
 
@@ -1000,7 +988,7 @@ static void ipqess_hw_stop(struct ipqess *ess)
 	ipqess_m32(ess, IPQESS_TXQ_CTRL_TXQ_EN, 0, IPQESS_REG_TXQ_CTRL);
 }
 
-static int ipqess_hw_init(struct ipqess *ess)
+static int ipqess_hw_init(struct ipqess_master *ess)
 {
 	int i, err;
 	u32 tmp;
@@ -1129,7 +1117,7 @@ static struct phylink_mac_ops ipqess_phylink_mac_ops = {
 	.mac_link_down		= ipqess_mac_link_down,
 };
 
-static void ipqess_reset(struct ipqess *ess)
+static void ipqess_reset(struct ipqess_master *ess)
 {
 	reset_control_assert(ess->ess_rst);
 
@@ -1149,7 +1137,8 @@ static int ipqess_axi_probe(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 	struct net_device *netdev;
 	phy_interface_t phy_mode;
-	struct ipqess *ess;
+	struct ipqess_master *ess;
+	struct device_node *port_node;
 	int i, err = 0;
 
 	netdev = devm_alloc_etherdev_mqs(&pdev->dev, sizeof(*ess),
@@ -1244,9 +1233,15 @@ static int ipqess_axi_probe(struct platform_device *pdev)
 	if (err)
 		goto err_hw_stop;
 
-	err = register_netdev(netdev);
+	/* clean bindings later, handle of_node_put etc. cleanly*/
+	port_node = of_get_parent(np);
+	port_node = of_get_child_by_name(port_node, "switch@c000000");
+	port_node = of_get_child_by_name(port_node, "ports");
+	port_node = of_get_child_by_name(port_node, "port@1");
+	err = ipqess_port_register(ess, 1, port_node);
 	if (err)
-		goto err_notifier_unregister;
+		pr_err("error %d while registering port node %d",
+				err, 1);
 
 	return 0;
 
@@ -1269,7 +1264,7 @@ err_clk:
 static int ipqess_axi_remove(struct platform_device *pdev)
 {
 	const struct net_device *netdev = platform_get_drvdata(pdev);
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 
 	unregister_netdev(ess->netdev);
 	ipqess_hw_stop(ess);

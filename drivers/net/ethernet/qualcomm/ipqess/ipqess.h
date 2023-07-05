@@ -128,7 +128,7 @@ struct ipqess_tx_ring {
 	struct napi_struct napi_tx;
 	u32 idx;
 	int ring_id;
-	struct ipqess *ess;
+	struct ipqess_master *ess;
 	struct netdev_queue *nq;
 	struct ipqess_tx_desc *hw_desc;
 	struct ipqess_buf *buf;
@@ -142,7 +142,7 @@ struct ipqess_rx_ring {
 	struct napi_struct napi_rx;
 	u32 idx;
 	int ring_id;
-	struct ipqess *ess;
+	struct ipqess_master *ess;
 	struct device *ppdev;
 	struct ipqess_rx_desc **hw_desc;
 	struct ipqess_buf *buf;
@@ -159,7 +159,7 @@ struct ipqess_rx_ring_refill {
 
 #define IPQESS_IRQ_NAME_LEN	32
 
-struct ipqess {
+struct ipqess_master {
 	struct net_device *netdev;
 	void __iomem *hw_addr;
 
@@ -191,7 +191,10 @@ struct ipqess {
 };
 
 void ipqess_set_ethtool_ops(struct net_device *netdev);
-void ipqess_update_hw_stats(struct ipqess *ess);
+void ipqess_update_hw_stats(struct ipqess_master *ess);
+netdev_tx_t ipqess_master_xmit(struct sk_buff *skb,
+		struct ipqess_master *ess, u16 port_nb);
+
 
 /* register definition */
 #define IPQESS_REG_MAS_CTRL 0x0

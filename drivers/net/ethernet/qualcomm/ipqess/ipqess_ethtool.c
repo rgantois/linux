@@ -101,7 +101,7 @@ static void ipqess_get_ethtool_stats(struct net_device *netdev,
 				     struct ethtool_stats *stats,
 				     uint64_t *data)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 	u32 *essstats = (u32 *)&ess->ipqess_stats;
 	int i;
 
@@ -125,7 +125,7 @@ static void ipqess_get_drvinfo(struct net_device *dev,
 static int ipqess_get_link_ksettings(struct net_device *netdev,
 				     struct ethtool_link_ksettings *cmd)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 
 	return phylink_ethtool_ksettings_get(ess->phylink, cmd);
 }
@@ -133,7 +133,7 @@ static int ipqess_get_link_ksettings(struct net_device *netdev,
 static int ipqess_set_link_ksettings(struct net_device *netdev,
 				     const struct ethtool_link_ksettings *cmd)
 {
-	struct ipqess *ess = netdev_priv(netdev);
+	struct ipqess_master *ess = netdev_priv(netdev);
 
 	return phylink_ethtool_ksettings_set(ess->phylink, cmd);
 }
