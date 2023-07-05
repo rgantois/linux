@@ -12,7 +12,6 @@ struct ipqess_port {
 	struct device_node *dn;
 };
 
-int ipqess_port_register(struct ipqess_master *master, u16 index,
-		struct device_node *dn);
+int ipqess_port_register(struct ipqess_master *master, u16 index);
 
 #endif

@@ -1234,11 +1234,7 @@ static int ipqess_axi_probe(struct platform_device *pdev)
 		goto err_hw_stop;
 
 	/* clean bindings later, handle of_node_put etc. cleanly*/
-	port_node = of_get_parent(np);
-	port_node = of_get_child_by_name(port_node, "switch@c000000");
-	port_node = of_get_child_by_name(port_node, "ports");
-	port_node = of_get_child_by_name(port_node, "port@1");
-	err = ipqess_port_register(ess, 1, port_node);
+	err = ipqess_port_register(ess, 1);
 	if (err)
 		pr_err("error %d while registering port node %d",
 				err, 1);

@@ -2,6 +2,7 @@
 #include <linux/phylink.h>
 #include <linux/etherdevice.h>
 #include <linux/of_net.h>
+#include <linux/platform_device.h>
 #include <net/rtnetlink.h>
 
 #include "ipqess_port.h"
@@ -92,15 +93,41 @@ static const struct net_device_ops ipqess_netdev_ops = {
 };
 
 /* phylink ***********************************************/
+static struct phylink_pcs *ipqess_port_phylink_mac_select_pcs(
+		struct phylink_config *config,
+		phy_interface_t interface)
+{
+	return NULL;
+}
+
+static void ipqess_port_phylink_mac_pcs_get_state(
+		struct phylink_config *config,
+		struct phylink_link_state *state)
+{
+	int err;
+	state->link = 0;
+}
+
+static void ipqess_port_phylink_mac_config(
+		struct phylink_config *config,
+		unsigned int mode,
+		const struct phylink_link_state *state)
+{
+	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
+
+
+}
 
 static const struct phylink_mac_ops ipqess_port_phylink_mac_ops = {
 	.validate = phylink_generic_validate,
 	.mac_select_pcs = ipqess_port_phylink_mac_select_pcs,
 	.mac_pcs_get_state = ipqess_port_phylink_mac_pcs_get_state,
 	.mac_config = ipqess_port_phylink_mac_config,
+	/*
 	.mac_an_restart = ipqess_port_phylink_mac_an_restart,
 	.mac_link_down = ipqess_port_phylink_mac_link_down,
 	.mac_link_up = ipqess_port_phylink_mac_link_up,
+	*/
 };
 
 static int ipqess_port_phylink_create(struct net_device *ndev)
@@ -116,6 +143,25 @@ static int ipqess_port_phylink_create(struct net_device *ndev)
 	if (err)
 		mode = PHY_INTERFACE_MODE_NA;
 
+	switch (port->index) {
+	case 0: /* CPU port */
+		__set_bit(PHY_INTERFACE_MODE_INTERNAL,
+			  pl_config->supported_interfaces);
+		break;
+
+	case 1:
+	case 2:
+	case 3:
+		__set_bit(PHY_INTERFACE_MODE_PSGMII,
+			  pl_config->supported_interfaces);
+		break;
+	case 4:
+	case 5:
+		phy_interface_set_rgmii(pl_config->supported_interfaces);
+		__set_bit(PHY_INTERFACE_MODE_PSGMII,
+			  pl_config->supported_interfaces);
+		break;
+	}
 	//phylink caps
 	pl_config->mac_capabilities = MAC_ASYM_PAUSE | MAC_SYM_PAUSE |
 		MAC_10 | MAC_100 | MAC_1000FD;
@@ -124,7 +170,6 @@ static int ipqess_port_phylink_create(struct net_device *ndev)
 	pl = phylink_create(pl_config, of_fwnode_handle(port->dn),
 			mode, &ipqess_port_phylink_mac_ops);
 	if (IS_ERR(pl)) {
-		pr_err("error creating PHYLINK: %ld\n", PTR_ERR(pl));
 		return PTR_ERR(pl);
 	}
 
@@ -132,16 +177,27 @@ static int ipqess_port_phylink_create(struct net_device *ndev)
 	return 0;
 }
 
-int ipqess_port_register(struct ipqess_master *master, u16 index,
-	struct device_node *dn)
+int ipqess_port_register(struct ipqess_master *master, u16 index)
 {
 	int err;
 	struct net_device *ndev;
-	const char *name = dn->label;
-	int assign_type = NET_NAME_PREDICTABLE;
+	struct device_node *master_node = master->pdev->dev.of_node;
+	struct device_node *port_node;
+	const char *name;
+	int assign_type;
 	struct ipqess_port *port;
 	pr_info("ipqess_port_register %d\n", index);
 
+	//to cleanup
+	port_node = of_find_node_by_path("/soc/switch@c000000/ports/port@4");
+
+	name = of_get_property(port_node, "label", NULL);
+	if (name == NULL) {
+		name = "eth%d";
+		assign_type = NET_NAME_ENUM;
+	} else {
+		assign_type = NET_NAME_PREDICTABLE;
+	}
 	ndev = alloc_netdev_mqs(sizeof(struct ipqess_port), name, assign_type,
 			ether_setup, IPQESS_NUM_TX_QUEUES, 1);
 	if (ndev == NULL)
@@ -149,7 +205,7 @@ int ipqess_port_register(struct ipqess_master *master, u16 index,
 	port = netdev_priv(ndev);
 	port->master = master;
 	port->index = index;
-	port->dn = dn;
+	port->dn = port_node;
 	err = ipqess_port_phylink_create(ndev);
 	if (err) {
 		pr_err("error creating PHYLINK: %d\n", err);
