@@ -94,22 +94,6 @@ static const struct net_device_ops ipqess_netdev_ops = {
 	*/
 };
 
-static int dsa_slave_phy_connect(struct net_device *ndev, int addr,
-				 u32 flags)
-{
-	struct ipqess_port *port = netdev_priv(ndev);
-
-	ndev->phydev = mdiobus_get_phy(port->mii_bus, addr);
-	if (!ndev->phydev) {
-		netdev_err(ndev, "no phy at %d\n", addr);
-		return -ENODEV;
-	}
-
-	ndev->phydev->dev_flags |= flags;
-
-	return phylink_connect_phy(port->pl, ndev->phydev);
-}
-
 static int ipqess_port_phy_setup(struct net_device *ndev)
 {
 	struct ipqess_port *port = netdev_priv(ndev);
@@ -119,26 +103,12 @@ static int ipqess_port_phy_setup(struct net_device *ndev)
 
 	port->pl_config.dev = &ndev->dev;
 	port->pl_config.type = PHYLINK_NETDEV;
-
-	ret = qca8k_phylink_create(ndev);
-	if (ret) 
-		return ret;
-
-	ret = phylink_of_phy_connect(port->pl, port_dn, phy_flags);
-	if (ret == -ENODEV && port->mii_bus) {
-		/* We could not connect to a designated PHY or SFP, so try to
-		 * use the switch internal MDIO bus instead
-		 */
-		ret = dsa_slave_phy_connect(ndev, port->index, phy_flags);
+	//see port.c
+	err = qca8k_phylink_create(ndev);
+	if (err) {
+		pr_err("error creating PHYLINK: %d\n", err);
+		goto out_free;
 	}
-	if (ret) {
-		netdev_err(ndev, "failed to connect to PHY: %pe\n",
-			   ERR_PTR(ret));
-		phylink_destroy(port->pl);
-		port->pl = NULL;
-	}
-
-	return ret;
 }
 
 int ipqess_port_register(struct ipqess_master *master, u16 index,
@@ -173,7 +143,6 @@ int ipqess_port_register(struct ipqess_master *master, u16 index,
 	port->dn = port_node;
 	port->sw_priv = sw_priv;
 
-	//this needs to be moved to netdev ops later
 	err = ipqess_port_phy_setup(ndev);
 	if (err) {
 		pr_err("error setting up PHY: %d\n", err);

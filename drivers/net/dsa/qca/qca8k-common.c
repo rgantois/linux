@@ -8,9 +8,9 @@
 
 #include <linux/netdevice.h>
 #include <net/dsa.h>
+#include <linux/dsa/qca8k.h>
 #include <linux/if_bridge.h>
 
-#include "qca8k.h"
 
 #define MIB_DESC(_s, _o, _n)	\
 	{			\

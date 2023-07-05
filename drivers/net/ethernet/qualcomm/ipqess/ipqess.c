@@ -22,12 +22,14 @@
 #include <linux/reset.h>
 #include <linux/skbuff.h>
 #include <linux/vmalloc.h>
+#include <linux/dsa/qca8k.h>
 #include <net/checksum.h>
 #include <net/dsa.h>
 #include <net/ip6_checksum.h>
 
 #include "ipqess.h"
 #include "ipqess_port.h"
+#include "qca8k_switch.h"
 
 #define IPQESS_RRD_SIZE		16
 #define IPQESS_NEXT_IDX(X, Y)  (((X) + 1) & ((Y) - 1))
@@ -1140,6 +1142,7 @@ static int ipqess_axi_probe(struct platform_device *pdev)
 	struct ipqess_master *ess;
 	struct device_node *port_node;
 	int i, err = 0;
+	struct qca8k_priv *sw_priv;
 
 	netdev = devm_alloc_etherdev_mqs(&pdev->dev, sizeof(*ess),
 					 IPQESS_NETDEV_QUEUES,
@@ -1233,8 +1236,12 @@ static int ipqess_axi_probe(struct platform_device *pdev)
 	if (err)
 		goto err_hw_stop;
 
+	err = qca8k_switch_init(&sw_priv);
+	if (err)
+		pr_err("error %d while initializing switch",
+				err);
 	/* clean bindings later, handle of_node_put etc. cleanly*/
-	err = ipqess_port_register(ess, 1);
+	err = ipqess_port_register(ess, 1, sw_priv);
 	if (err)
 		pr_err("error %d while registering port node %d",
 				err, 1);
