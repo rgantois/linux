@@ -27,7 +27,7 @@
 #include <net/dsa.h>
 #include <net/ip6_checksum.h>
 
-#include "ipqess.h"
+#include "ipqess_master.h"
 #include "ipqess_port.h"
 #include "qca8k_switch.h"
 
@@ -1134,28 +1134,21 @@ static void ipqess_reset(struct ipqess_master *ess)
 	mdelay(10);
 }
 
-static int ipqess_axi_probe(struct platform_device *pdev)
+struct ipqess_master *ipqess_axi_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
-	struct net_device *netdev;
 	phy_interface_t phy_mode;
 	struct ipqess_master *ess;
-	struct device_node *port_node;
 	int i, err = 0;
 	struct qca8k_priv *sw_priv;
 
-	netdev = devm_alloc_etherdev_mqs(&pdev->dev, sizeof(*ess),
-					 IPQESS_NETDEV_QUEUES,
-					 IPQESS_NETDEV_QUEUES);
-	if (!netdev)
+	ess = devm_kzalloc(&pdev->dev, sizeof(struct ipqess_master), GFP_KERNEL);
+	if (!ess)
 		return -ENOMEM;
 
-	ess = netdev_priv(netdev);
-	ess->netdev = netdev;
 	ess->pdev = pdev;
 	spin_lock_init(&ess->stats_lock);
-	SET_NETDEV_DEV(netdev, &pdev->dev);
-	platform_set_drvdata(pdev, netdev);
+	platform_set_drvdata(pdev, ess);
 
 	ess->hw_addr = devm_platform_get_and_ioremap_resource(pdev, 0, NULL);
 	if (IS_ERR(ess->hw_addr))
@@ -1177,7 +1170,7 @@ static int ipqess_axi_probe(struct platform_device *pdev)
 
 	ipqess_reset(ess);
 
-	ess->phylink_config.dev = &netdev->dev;
+	//ess->phylink_config.dev = &netdev->dev;
 	ess->phylink_config.type = PHYLINK_NETDEV;
 	ess->phylink_config.mac_capabilities = MAC_SYM_PAUSE | MAC_10 |
 					       MAC_100 | MAC_1000FD;
@@ -1205,48 +1198,11 @@ static int ipqess_axi_probe(struct platform_device *pdev)
 			  "%s:rxq%d", pdev->name, i);
 	}
 
-	netdev->netdev_ops = &ipqess_axi_netdev_ops;
-	netdev->features = NETIF_F_HW_CSUM | NETIF_F_RXCSUM |
-			   NETIF_F_HW_VLAN_CTAG_RX |
-			   NETIF_F_HW_VLAN_CTAG_TX |
-			   NETIF_F_TSO | NETIF_F_GRO | NETIF_F_SG;
-	/* feature change is not supported yet */
-	netdev->hw_features = 0;
-	netdev->vlan_features = NETIF_F_HW_CSUM | NETIF_F_SG | NETIF_F_RXCSUM |
-				NETIF_F_TSO |
-				NETIF_F_GRO;
-	netdev->watchdog_timeo = 5 * HZ;
-	netdev->base_addr = (u32)ess->hw_addr;
-	netdev->max_mtu = 9000;
-	netdev->gso_max_segs = IPQESS_TX_RING_SIZE / 2;
-
-	ipqess_set_ethtool_ops(netdev);
-
 	err = ipqess_hw_init(ess);
 	if (err)
 		goto err_phylink;
 
-	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
-		netif_napi_add_tx(netdev, &ess->tx_ring[i].napi_tx, ipqess_tx_napi);
-		netif_napi_add(netdev, &ess->rx_ring[i].napi_rx, ipqess_rx_napi);
-	}
-
-	ess->netdev_notifier.notifier_call = ipqess_netdevice_event;
-	err = register_netdevice_notifier(&ess->netdev_notifier);
-	if (err)
-		goto err_hw_stop;
-
-	err = qca8k_switch_init(&sw_priv);
-	if (err)
-		pr_err("error %d while initializing switch",
-				err);
-	/* clean bindings later, handle of_node_put etc. cleanly*/
-	err = ipqess_port_register(ess, 1, sw_priv);
-	if (err)
-		pr_err("error %d while registering port node %d",
-				err, 1);
-
-	return 0;
+	return ess;
 
 err_notifier_unregister:
 	unregister_netdevice_notifier(&ess->netdev_notifier);
@@ -1261,15 +1217,13 @@ err_phylink:
 err_clk:
 	clk_disable_unprepare(ess->ess_clk);
 
-	return err;
+	pr_err("IPQESS master initialization failed with error %d\n", err);
+	return NULL;
 }
 
-static int ipqess_axi_remove(struct platform_device *pdev)
+static int ipqess_axi_remove(struct ipqess_master *ess)
 {
-	const struct net_device *netdev = platform_get_drvdata(pdev);
-	struct ipqess_master *ess = netdev_priv(netdev);
 
-	unregister_netdev(ess->netdev);
 	ipqess_hw_stop(ess);
 
 	ipqess_tx_ring_free(ess);
@@ -1281,26 +1235,3 @@ static int ipqess_axi_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id ipqess_of_mtable[] = {
-	{.compatible = "qcom,ipq4019-ess-edma" },
-	{}
-};
-MODULE_DEVICE_TABLE(of, ipqess_of_mtable);
-
-static struct platform_driver ipqess_axi_driver = {
-	.driver = {
-		.name    = "ipqess-edma",
-		.of_match_table = ipqess_of_mtable,
-	},
-	.probe    = ipqess_axi_probe,
-	.remove   = ipqess_axi_remove,
-};
-
-module_platform_driver(ipqess_axi_driver);
-
-MODULE_AUTHOR("Qualcomm Atheros Inc");
-MODULE_AUTHOR("John Crispin <john@phrozen.org>");
-MODULE_AUTHOR("Christian Lamparter <chunkeey@gmail.com>");
-MODULE_AUTHOR("Gabor Juhos <j4g8y7@gmail.com>");
-MODULE_AUTHOR("Maxime Chevallier <maxime.chevallier@bootlin.com>");
-MODULE_LICENSE("GPL");

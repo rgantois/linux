@@ -3,6 +3,4 @@
 
 #include <linux/dsa/qca8k.h>
 
-int qca8k_switch_init(struct qca8k_priv **ppriv);
-
 #endif

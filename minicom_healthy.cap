@@ -1,0 +1,97 @@
+ip link
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: dummy0: <BROADCAST,NOARP> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether 86:80:84:48:cc:d2 brd ff:ff:ff:ff:ff:ff
+3: eth0: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether d6:d1:be:7f:29:9c brd ff:ff:ff:ff:ff:ff
+4: lan@eth0: <BROADCAST,MULTICAST,M-DOWN> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether d6:d1:be:7f:29:9c brd ff:ff:ff:ff:ff:ff
+5: wan@eth0: <BROADCAST,MULTICAST,M-DOWN> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether 00:00:c0:a0:f3:86 brd ff:ff:ff:ff:ff:ff
+# ip ethtool lan
+Settings for lan:
+	Supported ports: [ TP MII ]
+	Supported link modes:   10baseT/Half 10baseT/Full 
+	                        100baseT/Half 100baseT/Full 
+	                        1000baseT/Full 
+	Supported pause frame use: Symmetric Receive-only
+	Supports auto-negotiation: Yes
+	Supported FEC modes: Not reported
+	Advertised link modes:  10baseT/Half 10baseT/Full 
+	                        100baseT/Half 100baseT/Full 
+	                        1000baseT/Full 
+	Advertised pause frame use: Symmetric Receive-only
+	Advertised auto-negotiation: Yes
+	Advertised FEC modes: Not reported
+	Speed: Unknown!
+	Duplex: Unknown! (255)
+	Port: MII
+	PHYAD: 3
+	Transceiver: external
+	Auto-negotiation: on
+	Supports Wake-on: d
+	Wake-on: d
+	Link detected: no
+# mii# mii-diag lan
+Basic registers of MII PHY #3:  1040 796d 004d d0b1 1de1 c5e1 000f 2001.
+ The autonegotiated capability is 01e0.
+The autonegotiated media type is 100baseTx-FD.
+ Basic mode control register 0x1040: Auto-negotiation enabled.
+ You have link beat, and everything is working OK.
+ Your link partner advertised c5e1: Flow-control 100baseTx-FD 100baseTx 10baseT-FD 10baseT, w/ 802.3X flow control.
+   End of basic transceiver information.
+
+# ethtool -S lnan
+NIC statistics:
+     tx_packets: 0
+     tx_bytes: 0
+     rx_packets: 0
+     rx_bytes: 0
+     RxBroad: 0
+     RxPause: 0
+     RxMulti: 0
+     RxFcsErr: 0
+     RxAlignErr: 0
+     RxRunt: 0
+     RxFragment: 0
+     Rx64Byte: 0
+     Rx128Byte: 0
+     Rx256Byte: 0
+     Rx512Byte: 0
+     Rx1024Byte: 0
+     Rx1518Byte: 0
+     RxMaxByte: 0
+     RxTooLong: 0
+     RxGoodByte: 0
+     RxBadByte: 0
+     RxOverFlow: 0
+     Filtered: 0
+     TxBroad: 0
+     TxPause: 0
+     TxMulti: 0
+     TxUnderRun: 0
+     Tx64Byte: 0
+     Tx128Byte: 0
+     Tx256Byte: 0
+     Tx512Byte: 0
+     Tx1024Byte: 0
+     Tx1518Byte: 0
+     TxMaxByte: 0
+     TxOverSize: 0
+     TxByte: 0
+     TxCollision: 0
+     TxAbortCol: 0
+     TxMultiCol: 0
+     TxSingleCol: 0
+     TxExcDefer: 0
+     TxDefer: 0
+     TxLateCol: 0
+     RXUnicast: 0
+     TXUnicast: 0
+# ip link set up dev lan
+[   43.447175] ipqess-edma c080000.ethernet eth0: configuring for fixed/internal link mode
+[   43.447794] ipqess-edma c080000.ethernet eth0: Link is Up - 1Gbps/Full - flow control rx/tx
+[   43.454084] qca8k-ipq4019 c000000.switch lan: configuring for phy/psgmii link mode
+[   43.462414] qca8k-ipq4019 c000000.switch: PSGMII calibration!
+# [   47.196742] qca8k-ipq4019 c000000.switch lan: Link is Up - 1Gbps/Full - flow control rx/tx

@@ -1,0 +1,90 @@
+ip link
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: dummy0: <BROADCAST,NOARP> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether 5e:84:63:c9:ea:fc brd ff:ff:ff:ff:ff:ff
+3: lan: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether 00:00:00:00:00:00 brd ff:ff:ff:ff:ff:ff
+# ethtool lan
+Settings for lan:
+	Supported ports: [ TP MII ]
+	Supported link modes:   10baseT/Half 10baseT/Full 
+	                        100baseT/Half 100baseT/Full 
+	                        1000baseT/Full 
+	Supported pause frame use: Symmetric Receive-only
+	Supports auto-negotiation: Yes
+	Supported FEC modes: Not reported
+	Advertised link modes:  10baseT/Half 10baseT/Full 
+	                        100baseT/Half 100baseT/Full 
+	                        1000baseT/Full 
+	Advertised pause frame use: Symmetric Receive-only
+	Advertised auto-negotiation: Yes
+	Advertised FEC modes: Not reported
+	Speed: Unknown!
+	Duplex: Unknown! (255)
+	Port: MII
+	PHYAD: 3
+	Transceiver: external
+	Auto-negotiation: on
+	Supports Wake-on: d
+	Wake-on: d
+	Link detected: no
+# mii# mii-diag lan
+Basic registers of MII PHY #3:  1040 796d 004d d0b1 1de1 c5e1 000f 2001.
+ The autonegotiated capability is 01e0.
+The autonegotiated media type is 100baseTx-FD.
+ Basic mode control register 0x1040: Auto-negotiation enabled.
+ You have link beat, and everything is working OK.
+ Your link partner advertised c5e1: Flow-control 100baseTx-FD 100baseTx 10baseT-FD 10baseT, w/ 802.3X flow control.
+   End of basic transceiver information.
+
+# ethtool -S lan
+NIC statistics:
+     tx_packets: 0
+     tx_bytes: 0
+     rx_packets: 0
+     rx_bytes: 0
+     RxBroad: 5121
+     RxPause: 5121
+     RxMulti: 5121
+     RxFcsErr: 5121
+     RxAlignErr: 5121
+     RxRunt: 5121
+     RxFragment: 5121
+     Rx64Byte: 5121
+     Rx128Byte: 5121
+     Rx256Byte: 5121
+     Rx512Byte: 5121
+     Rx1024Byte: 5121
+     Rx1518Byte: 5121
+     RxMaxByte: 5121
+     RxTooLong: 5121
+     RxGoodByte: 21994527527937
+     RxBadByte: 21994527527937
+     RxOverFlow: 5121
+     Filtered: 5121
+     TxBroad: 5121
+     TxPause: 5121
+     TxMulti: 5121
+     TxUnderRun: 5121
+     Tx64Byte: 5121
+     Tx128Byte: 5121
+     Tx256Byte: 5121
+     Tx512Byte: 5121
+     Tx1024Byte: 5121
+     Tx1518Byte: 5121
+     TxMaxByte: 5121
+     TxOverSize: 5121
+     TxByte: 21994527527937
+     TxCollision: 5121
+     TxAbortCol: 5121
+     TxMultiCol: 5121
+     TxSingleCol: 5121
+     TxExcDefer: 5121
+     TxDefer: 5121
+     TxLateCol: 5121
+     RXUnicast: 5121
+     TXUnicast: 5121
+# ip link set up dev lan
+[   22.364585] qca8k-ipq4019 c000000.switch lan: configuring for phy/psgmii link mode
+[   22.364674] qca8k-ipq4019 c000000.switch: PSGMII calibration!

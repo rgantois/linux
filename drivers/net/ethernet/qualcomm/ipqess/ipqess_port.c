@@ -10,6 +10,7 @@
 #include <net/selftests.h>
 
 #include "ipqess_port.h"
+#include "ipqess_master.h"
 #include "qca8k_phylink.h"
 
 #define IPQESS_NUM_TX_QUEUES 1
@@ -91,6 +92,7 @@ static int ipqess_port_enable_rt(struct ipqess_port *port,
 	if (!port->bridge)
 		ipqess_port_set_state_now(port, BR_STATE_FORWARDING, false);
 
+	pr_info("is phylink NULL?: %px\n", port->pl);
 	if (port->pl)
 		phylink_start(port->pl);
 
@@ -123,6 +125,9 @@ static int ipqess_port_open(struct net_device *ndev)
 	struct ipqess_port *port = netdev_priv(ndev);
 	struct phy_device *phy = ndev->phydev;
 	int ret;
+
+	//!!!!!!!!!!!!!!!!!!
+	//ret = ipqess_open(master, NULL);
 
 	ret = ipqess_port_enable_rt(port, phy);
 
@@ -602,7 +607,8 @@ static const struct ethtool_ops ipqess_port_ethtool_ops = {
 };
 
 int ipqess_port_register(u16 index,
-		struct qca8k_priv *sw_priv)
+		struct qca8k_priv *sw_priv,
+		struct ipqess_master *master)
 {
 	int err;
 	struct net_device *ndev;
@@ -639,6 +645,7 @@ int ipqess_port_register(u16 index,
 	port->dn = port_node;
 	port->dev = ndev;
 	port->sw_priv = sw_priv;
+	port->master = master;
 
 	ndev->ethtool_ops = &ipqess_port_ethtool_ops;
 

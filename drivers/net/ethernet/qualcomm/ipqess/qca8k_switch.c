@@ -4,6 +4,7 @@
 #include <linux/of_mdio.h>
 
 #include "ipqess_port.h"
+#include "ipqess_master.h"
 
 static struct regmap_config qca8k_ipq4019_regmap_config = {
 	.reg_bits = 32,
@@ -32,6 +33,7 @@ int qca8k_switch_probe(struct platform_device *pdev)
 	struct qca8k_priv *priv;
 	void __iomem *base, *psgmii;
 	struct device_node *np = dev->of_node, *mdio_np, *psgmii_ethphy_np;
+	struct ipqess_master *master;
 	int ret;
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
@@ -106,7 +108,11 @@ int qca8k_switch_probe(struct platform_device *pdev)
 
 	mutex_init(&priv->reg_mutex);
 	platform_set_drvdata(pdev, priv);
-	ipqess_port_register(1, priv);
+
+	master = ipqess_axi_probe(of_find_device_by_node(of_get_child_by_name(np, "ethernet@c080000")));
+
+	ipqess_port_register(1, priv, master);
+
 	return 0;
 }
 

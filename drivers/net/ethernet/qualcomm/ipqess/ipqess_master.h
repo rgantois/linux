@@ -160,7 +160,7 @@ struct ipqess_rx_ring_refill {
 #define IPQESS_IRQ_NAME_LEN	32
 
 struct ipqess_master {
-	struct net_device *netdev;
+	struct net_device *netdev;//to be removed
 	void __iomem *hw_addr;
 
 	struct clk *ess_clk;
@@ -195,6 +195,7 @@ void ipqess_update_hw_stats(struct ipqess_master *ess);
 netdev_tx_t ipqess_master_xmit(struct sk_buff *skb,
 		struct ipqess_master *ess, u16 port_nb);
 
+struct ipqess_master *ipqess_axi_probe(struct platform_device *pdev);
 
 /* register definition */
 #define IPQESS_REG_MAS_CTRL 0x0
