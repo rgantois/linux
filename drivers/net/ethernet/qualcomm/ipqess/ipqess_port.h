@@ -7,7 +7,6 @@
 #include <net/devlink.h>
 
 #include "ipqess_port.h"
-#include "ipqess.h"
 
 struct qca8k_bridge {
 	struct net_device *net;
@@ -17,7 +16,6 @@ struct qca8k_bridge {
 };
 
 struct ipqess_port {
-	struct ipqess_master *master;
 	u16 index;
 	struct phylink *pl;
 	struct phylink_config pl_config;
@@ -54,7 +52,7 @@ struct ipqess_port {
 	struct gro_cells	gcells;
 };
 
-int ipqess_port_register(struct ipqess_master *master, u16 index,
+int ipqess_port_register(u16 index,
 		struct qca8k_priv *sw_priv);
 
 #endif

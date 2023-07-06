@@ -932,9 +932,3 @@ static struct platform_driver qca8k_ipq4019_driver = {
 	},
 };
 
-module_platform_driver(qca8k_ipq4019_driver);
-
-MODULE_AUTHOR("Mathieu Olivari, John Crispin <john@phrozen.org>");
-MODULE_AUTHOR("Gabor Juhos <j4g8y7@gmail.com>, Robert Marko <robert.marko@sartura.hr>");
-MODULE_DESCRIPTION("Qualcomm IPQ4019 built-in switch driver");
-MODULE_LICENSE("GPL");

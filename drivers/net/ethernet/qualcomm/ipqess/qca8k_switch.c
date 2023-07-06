@@ -3,6 +3,8 @@
 #include <linux/of_platform.h>
 #include <linux/of_mdio.h>
 
+#include "ipqess_port.h"
+
 static struct regmap_config qca8k_ipq4019_regmap_config = {
 	.reg_bits = 32,
 	.val_bits = 32,
@@ -24,12 +26,8 @@ static const struct qca8k_match_data ipq4019 = {
 	.mib_count = QCA8K_QCA833X_MIB_COUNT,
 };
 
-int qca8k_switch_init(struct qca8k_priv **ppriv)
+int qca8k_switch_probe(struct platform_device *pdev)
 {
-	//clean this up later
-	struct device_node *switch_node = 
-		of_find_node_by_path("/soc/switch@c000000");
-	struct platform_device *pdev = of_find_device_by_node(switch_node);
 	struct device *dev = &pdev->dev;
 	struct qca8k_priv *priv;
 	void __iomem *base, *psgmii;
@@ -108,8 +106,45 @@ int qca8k_switch_init(struct qca8k_priv **ppriv)
 
 	mutex_init(&priv->reg_mutex);
 	platform_set_drvdata(pdev, priv);
-	*ppriv = priv;
+	ipqess_port_register(1, priv);
 	return 0;
 }
 
+static int
+qca8k_switch_remove(struct platform_device *pdev)
+{
+	struct qca8k_priv *priv = dev_get_drvdata(&pdev->dev);
+	int i;
+
+	if (!priv)
+		return 0;
+
+	for (i = 0; i < QCA8K_IPQ4019_NUM_PORTS; i++)
+		qca8k_port_set_status(priv, i, 0);
+
+	platform_set_drvdata(pdev, NULL);
+
+	//!!!!!!!!!!!!!!!!
+	//ipqess_port_unregister();
+	return 0;
+}
+
+static const struct of_device_id qca8k_ipq4019_of_match[] = {
+	{ .compatible = "qca,ipq4019-qca8337n", },
+	{ /* sentinel */ },
+};
+
+static struct platform_driver qca8k_ipq4019_driver = {
+	.probe = qca8k_switch_probe,
+	.remove = qca8k_switch_remove,
+	.driver = {
+		.name = "qca8k-ipq4019",
+		.of_match_table = qca8k_ipq4019_of_match,
+	},
+};
+
+module_platform_driver(qca8k_ipq4019_driver);
+
+MODULE_DESCRIPTION("Qualcomm IPQ4019 built-in switch driver");
+MODULE_LICENSE("GPL");
 
