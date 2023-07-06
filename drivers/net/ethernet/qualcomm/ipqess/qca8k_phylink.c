@@ -447,11 +447,58 @@ qca8k_phylink_ipq4019_mac_link_down(struct phylink_config *config,
 {
 	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
 	struct qca8k_priv *priv = port->sw_priv;
+	struct phy_device *phydev = NULL;
 
-	//... (see port.c)
-	//we need a phydev before we go any further
+	if (port->index > 0) {
+		phydev = port->dev->phydev;
+	}
 	qca8k_port_set_status(priv, port->index, 0);
 }
+
+static void qca8k_phylink_mac_link_up(struct phylink_config *config,
+		struct phy_device *phydev,
+		unsigned int mode,
+		phy_interface_t interface,
+		int speed, int duplex,
+		bool tx_pause, bool rx_pause)
+{
+	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
+	struct qca8k_priv *priv = port->sw_priv;
+	u32 reg;
+
+	if (phylink_autoneg_inband(mode)) {
+		reg = QCA8K_PORT_STATUS_LINK_AUTO;
+	} else {
+		switch (speed) {
+		case SPEED_10:
+			reg = QCA8K_PORT_STATUS_SPEED_10;
+			break;
+		case SPEED_100:
+			reg = QCA8K_PORT_STATUS_SPEED_100;
+			break;
+		case SPEED_1000:
+			reg = QCA8K_PORT_STATUS_SPEED_1000;
+			break;
+		default:
+			reg = QCA8K_PORT_STATUS_LINK_AUTO;
+			break;
+		}
+
+		if (duplex == DUPLEX_FULL)
+			reg |= QCA8K_PORT_STATUS_DUPLEX;
+
+		if (rx_pause || (port->index == 0))
+			reg |= QCA8K_PORT_STATUS_RXFLOW;
+
+		if (tx_pause || (port->index == 0))
+			reg |= QCA8K_PORT_STATUS_TXFLOW;
+	}
+
+	reg |= QCA8K_PORT_STATUS_TXMAC | QCA8K_PORT_STATUS_RXMAC;
+	
+	qca8k_write(priv, QCA8K_REG_PORT_STATUS(port->index), reg);
+}
+
 
 static const struct phylink_mac_ops qca8k_phylink_mac_ops = {
 	.validate = phylink_generic_validate,
@@ -460,9 +507,7 @@ static const struct phylink_mac_ops qca8k_phylink_mac_ops = {
 	.mac_config = qca8k_phylink_ipq4019_mac_config,
 	.mac_an_restart = qca8k_phylink_ipq4019_mac_an_restart,
 	.mac_link_down = qca8k_phylink_ipq4019_mac_link_down,
-	/*
 	.mac_link_up = qca8k_phylink_mac_link_up,
-	*/
 };
 
 

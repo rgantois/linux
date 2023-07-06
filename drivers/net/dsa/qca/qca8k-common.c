@@ -161,7 +161,7 @@ static void qca8k_fdb_write(struct qca8k_priv *priv, u16 vid, u8 port_mask,
 			  QCA8K_ATU_TABLE_SIZE);
 }
 
-static int qca8k_fdb_access(struct qca8k_priv *priv, enum qca8k_fdb_cmd cmd,
+int qca8k_fdb_access(struct qca8k_priv *priv, enum qca8k_fdb_cmd cmd,
 			    int port)
 {
 	u32 reg;
