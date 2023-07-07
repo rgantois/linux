@@ -17,7 +17,6 @@
 #include <linux/of_device.h>
 #include <linux/of_mdio.h>
 #include <linux/of_net.h>
-#include <linux/phylink.h>
 #include <linux/platform_device.h>
 #include <linux/reset.h>
 #include <linux/skbuff.h>
@@ -584,14 +583,12 @@ static int __init ipqess_init(struct net_device *netdev)
 	if (ret)
 		eth_hw_addr_random(netdev);
 
-	return phylink_of_phy_connect(ess->phylink, of_node, 0);
+	return 0;
 }
 
 static void ipqess_uninit(struct net_device *netdev)
 {
-	struct ipqess_master *ess = netdev_priv(netdev);
-
-	phylink_disconnect_phy(ess->phylink);
+	//nothing to do here
 }
 
 static int ipqess_open(struct net_device *netdev)
@@ -623,7 +620,6 @@ static int ipqess_open(struct net_device *netdev)
 	}
 
 	ipqess_irq_enable(ess);
-	phylink_start(ess->phylink);
 	netif_tx_start_all_queues(netdev);
 
 	return 0;
@@ -635,7 +631,6 @@ static int ipqess_stop(struct net_device *netdev)
 	int i;
 
 	netif_tx_stop_all_queues(netdev);
-	phylink_stop(ess->phylink);
 	ipqess_irq_disable(ess);
 	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
 		napi_disable(&ess->tx_ring[i].napi_tx);
@@ -643,13 +638,6 @@ static int ipqess_stop(struct net_device *netdev)
 	}
 
 	return 0;
-}
-
-static int ipqess_do_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
-{
-	struct ipqess_master *ess = netdev_priv(netdev);
-
-	return phylink_mii_ioctl(ess->phylink, ifr, cmd);
 }
 
 static u16 ipqess_tx_desc_available(struct ipqess_tx_ring *tx_ring)
@@ -924,17 +912,6 @@ static void ipqess_tx_timeout(struct net_device *netdev, unsigned int txq_id)
 	netdev_warn(netdev, "TX timeout on queue %d\n", tr->idx);
 }
 
-static const struct net_device_ops ipqess_axi_netdev_ops = {
-	.ndo_init		= ipqess_init,
-	.ndo_uninit		= ipqess_uninit,
-	.ndo_open		= ipqess_open,
-	.ndo_stop		= ipqess_stop,
-	.ndo_do_ioctl		= ipqess_do_ioctl,
-	.ndo_get_stats		= ipqess_get_stats,
-	.ndo_set_mac_address	= ipqess_set_mac_address,
-	.ndo_tx_timeout		= ipqess_tx_timeout,
-};
-
 static int ipqess_netdevice_event(struct notifier_block *nb,
 				  unsigned long event, void *ptr)
 {
@@ -1090,35 +1067,6 @@ err_rx_ring_free:
 	return err;
 }
 
-static void ipqess_mac_config(struct phylink_config *config, unsigned int mode,
-			      const struct phylink_link_state *state)
-{
-	/* Nothing to do, use fixed Internal mode */
-}
-
-static void ipqess_mac_link_down(struct phylink_config *config,
-				 unsigned int mode,
-				 phy_interface_t interface)
-{
-	/* Nothing to do, use fixed Internal mode */
-}
-
-static void ipqess_mac_link_up(struct phylink_config *config,
-			       struct phy_device *phy, unsigned int mode,
-			       phy_interface_t interface,
-			       int speed, int duplex,
-			       bool tx_pause, bool rx_pause)
-{
-	/* Nothing to do, use fixed Internal mode */
-}
-
-static struct phylink_mac_ops ipqess_phylink_mac_ops = {
-	.validate		= phylink_generic_validate,
-	.mac_config		= ipqess_mac_config,
-	.mac_link_up		= ipqess_mac_link_up,
-	.mac_link_down		= ipqess_mac_link_down,
-};
-
 static void ipqess_reset(struct ipqess_master *ess)
 {
 	reset_control_assert(ess->ess_rst);
@@ -1170,22 +1118,6 @@ struct ipqess_master *ipqess_axi_probe(struct platform_device *pdev)
 
 	ipqess_reset(ess);
 
-	//ess->phylink_config.dev = &netdev->dev;
-	ess->phylink_config.type = PHYLINK_NETDEV;
-	ess->phylink_config.mac_capabilities = MAC_SYM_PAUSE | MAC_10 |
-					       MAC_100 | MAC_1000FD;
-
-	__set_bit(PHY_INTERFACE_MODE_INTERNAL,
-		  ess->phylink_config.supported_interfaces);
-
-	ess->phylink = phylink_create(&ess->phylink_config,
-				      of_fwnode_handle(np), phy_mode,
-				      &ipqess_phylink_mac_ops);
-	if (IS_ERR(ess->phylink)) {
-		err = PTR_ERR(ess->phylink);
-		goto err_clk;
-	}
-
 	for (i = 0; i < IPQESS_MAX_TX_QUEUE; i++) {
 		ess->tx_irq[i] = platform_get_irq(pdev, i);
 		scnprintf(ess->tx_irq_names[i], sizeof(ess->tx_irq_names[i]),
@@ -1198,9 +1130,10 @@ struct ipqess_master *ipqess_axi_probe(struct platform_device *pdev)
 			  "%s:rxq%d", pdev->name, i);
 	}
 
-	err = ipqess_hw_init(ess);
+	//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	//err = ipqess_hw_init(ess);
 	if (err)
-		goto err_phylink;
+		goto err_clk;
 
 	return ess;
 
@@ -1211,8 +1144,6 @@ err_hw_stop:
 
 	ipqess_tx_ring_free(ess);
 	ipqess_rx_ring_free(ess);
-err_phylink:
-	phylink_destroy(ess->phylink);
 
 err_clk:
 	clk_disable_unprepare(ess->ess_clk);
@@ -1229,7 +1160,6 @@ static int ipqess_axi_remove(struct ipqess_master *ess)
 	ipqess_tx_ring_free(ess);
 	ipqess_rx_ring_free(ess);
 
-	phylink_destroy(ess->phylink);
 	clk_disable_unprepare(ess->ess_clk);
 
 	return 0;

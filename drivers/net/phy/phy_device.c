@@ -1073,6 +1073,7 @@ static void phy_link_change(struct phy_device *phydev, bool up)
 {
 	struct net_device *netdev = phydev->attached_dev;
 
+	pr_info("phy_link_change\n");
 	if (up)
 		netif_carrier_on(netdev);
 	else

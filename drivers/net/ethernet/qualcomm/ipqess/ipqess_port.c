@@ -140,7 +140,7 @@ static int ipqess_port_close(struct net_device *ndev)
 	//...
 	return 0;
 }
-/*
+
 static netdev_tx_t ipqess_port_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct sk_buff *nskb;
@@ -152,7 +152,6 @@ static netdev_tx_t ipqess_port_xmit(struct sk_buff *skb, struct net_device *ndev
 	memset(skb->cb, 0, sizeof(skb->cb));
 	return ipqess_master_xmit(skb, master, port->index);
 }
-*/
 
 static int ipqess_port_set_mac_address(struct net_device *ndev, void *a)
 {
@@ -185,16 +184,21 @@ static int ipqess_port_ioctl(struct net_device *ndev, struct ifreq *ifr, int cmd
 	return phylink_mii_ioctl(port->pl, ifr, cmd);
 }
 
+static int ipqess_port_get_iflink(const struct net_device *dev)
+{
+	return dev->ifindex;
+}
+
 static const struct net_device_ops ipqess_netdev_ops = {
 	.ndo_open	 	= ipqess_port_open,
 	.ndo_stop		= ipqess_port_close,
 	.ndo_set_mac_address	= ipqess_port_set_mac_address,
 	.ndo_eth_ioctl		= ipqess_port_ioctl,
-	/*
 	.ndo_start_xmit		= ipqess_port_xmit,
+	.ndo_get_iflink		= ipqess_port_get_iflink,
+	/*
 	.ndo_set_rx_mode = ipqess_port_set_rx_mode,
 	.ndo_fdb_dump		= ipqess_port_fdb_dump,
-	.ndo_get_iflink		= ipqess_port_get_iflink,
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_netpoll_setup	= ipqess_port_netpoll_setup,
 	.ndo_netpoll_cleanup	= ipqess_port_netpoll_cleanup,
@@ -255,6 +259,11 @@ static int ipqess_port_phy_setup(struct net_device *ndev)
 		port->pl = NULL;
 	}
 
+	//enable PHY
+	ret = genphy_resume(ndev->phydev);
+	ret = genphy_read_status(ndev->phydev);
+
+	dev_info(&ndev->dev, "enabled port's phy: %s", phydev_name(ndev->phydev));
 	return ret;
 }
 
@@ -606,6 +615,51 @@ static const struct ethtool_ops ipqess_port_ethtool_ops = {
 	.get_mm_stats		= ipqess_port_get_mm_stats,
 };
 
+/* netlink ***********************************/
+
+#define IFLA_IPQESS_UNSPEC 0
+#define IFLA_IPQESS_MAX 0
+
+static const struct nla_policy ipqess_policy[IFLA_IPQESS_MAX + 1] = {
+	[IFLA_IPQESS_MAX]	= { .type = NLA_U32 },
+};
+
+static int ipqess_changelink(struct net_device *dev, struct nlattr *tb[],
+			  struct nlattr *data[],
+			  struct netlink_ext_ack *extack)
+{
+	int err;
+
+	//not supported
+	return 0;
+}
+
+static size_t ipqess_get_size(const struct net_device *dev)
+{
+	return nla_total_size(sizeof(u32)) +	/* IFLA_DSA_MASTER  */
+	       0;
+}
+
+static int ipqess_fill_info(struct sk_buff *skb, const struct net_device *dev)
+{
+
+	if (nla_put_u32(skb, IFLA_IPQESS_UNSPEC, dev->ifindex))
+		return -EMSGSIZE;
+
+	return 0;
+}
+
+struct rtnl_link_ops ipqess_link_ops __read_mostly = {
+	.kind			= "switch",
+	.priv_size		= sizeof(struct ipqess_port),
+	.maxtype		= 1,
+	.policy			= ipqess_policy,
+	.changelink		= ipqess_changelink,
+	.get_size		=ipqess_get_size,
+	.fill_info		= ipqess_fill_info,
+	.netns_refund		= true,
+};
+
 int ipqess_port_register(u16 index,
 		struct qca8k_priv *sw_priv,
 		struct ipqess_master *master)
@@ -647,13 +701,25 @@ int ipqess_port_register(u16 index,
 	port->sw_priv = sw_priv;
 	port->master = master;
 
-	ndev->ethtool_ops = &ipqess_port_ethtool_ops;
+	of_get_mac_address(port_node, port->mac);
+	if (!is_zero_ether_addr(port->mac)) {
+		eth_hw_addr_set(ndev, port->mac);
+	} else {
+		eth_hw_addr_random(ndev);
+		//set port->mac too?
+	}
 
+	ndev->netdev_ops = &ipqess_netdev_ops;
+	ndev->max_mtu = QCA8K_MAX_MTU;
 	SET_NETDEV_DEVTYPE(ndev, &ipqess_type);
+
 	SET_NETDEV_DEV(ndev, port->sw_priv->dev);
-	//...
 	//SET_NETDEV_DEVLINK_PORT(ndev, &port->devlink_port);
 	ndev->dev.of_node = port->dn;
+	//ndev->vlan_features = master->vlan_features
+
+	ndev->rtnl_link_ops = &ipqess_link_ops;
+	ndev->ethtool_ops = &ipqess_port_ethtool_ops;
 
 	ndev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
 	if (!ndev->tstats) {
@@ -662,16 +728,14 @@ int ipqess_port_register(u16 index,
 	}
 
 	err = gro_cells_init(&port->gcells, ndev);
-
-	netif_carrier_off(ndev);
+	if (err)
+		goto out_free;
 
 	err = ipqess_port_phy_setup(ndev);
 	if (err) {
 		pr_err("error setting up PHY: %d\n", err);
-		goto out_free;
+		goto out_gcells;
 	}
-
-	ndev->netdev_ops = &ipqess_netdev_ops;
 
 	rtnl_lock();
 
@@ -698,10 +762,8 @@ out_phy:
 	rtnl_unlock();
 	phylink_destroy(port->pl);
 	port->pl = NULL;
-	/*
 out_gcells:
-	gro_cells_destroy(&p->gcells);
-	*/
+	gro_cells_destroy(&port->gcells);
 out_free:
 	free_percpu(ndev->tstats);
 	free_netdev(ndev);

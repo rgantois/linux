@@ -1,11 +1,18 @@
-ip link
+ip link && \
+> ethtool lan && \
+> ethtool -S lan && \
+> ethtool --show-eee lan && \
+> ethtool --driver lan && \
+> ethtool --show-features lan && \
+> mii-diag -v lan && \
+> phytool print lan/0 && \
+> ip link set up dev lan
 1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
     link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
 2: dummy0: <BROADCAST,NOARP> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
-    link/ether 5e:84:63:c9:ea:fc brd ff:ff:ff:ff:ff:ff
+    link/ether 66:89:33:1a:6d:de brd ff:ff:ff:ff:ff:ff
 3: lan: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
     link/ether 00:00:00:00:00:00 brd ff:ff:ff:ff:ff:ff
-# ethtool lan
 Settings for lan:
 	Supported ports: [ TP MII ]
 	Supported link modes:   10baseT/Half 10baseT/Full 
@@ -22,23 +29,14 @@ Settings for lan:
 	Advertised FEC modes: Not reported
 	Speed: Unknown!
 	Duplex: Unknown! (255)
-	Port: MII
+	Port: Twisted Pair
 	PHYAD: 3
 	Transceiver: external
 	Auto-negotiation: on
+	MDI-X: Unknown
 	Supports Wake-on: d
 	Wake-on: d
 	Link detected: no
-# mii# mii-diag lan
-Basic registers of MII PHY #3:  1040 796d 004d d0b1 1de1 c5e1 000f 2001.
- The autonegotiated capability is 01e0.
-The autonegotiated media type is 100baseTx-FD.
- Basic mode control register 0x1040: Auto-negotiation enabled.
- You have link beat, and everything is working OK.
- Your link partner advertised c5e1: Flow-control 100baseTx-FD 100baseTx 10baseT-FD 10baseT, w/ 802.3X flow control.
-   End of basic transceiver information.
-
-# ethtool -S lan
 NIC statistics:
      tx_packets: 0
      tx_bytes: 0
@@ -85,6 +83,131 @@ NIC statistics:
      TxLateCol: 5121
      RXUnicast: 5121
      TXUnicast: 5121
-# ip link set up dev lan
-[   22.364585] qca8k-ipq4019 c000000.switch lan: configuring for phy/psgmii link mode
-[   22.364674] qca8k-ipq4019 c000000.switch: PSGMII calibration!
+EEE Settings for lan:
+	EEE status: enabled - inactive
+	Tx LPI: disabled
+	Supported EEE link modes:  100baseT/Full 
+	                           1000baseT/Full 
+	Advertised EEE link modes:  100baseT/Full 
+	                            1000baseT/Full 
+	Link partner advertised EEE link modes:  100baseT/Full 
+	                                         1000baseT/Full 
+driver: qca8k-ipq4019
+version: 6.4.0-rc7-00009-gd7f4a127a6ed-d
+firmware-version: N/A
+expansion-rom-version: 
+bus-info: platform
+supports-statistics: yes
+supports-test: yes
+supports-eeprom-access: no
+supports-register-dump: no
+supports-priv-flags: no
+Features for lan:
+rx-checksumming: off [fixed]
+tx-checksumming: off
+	tx-checksum-ipv4: off [fixed]
+	tx-checksum-ip-generic: off [fixed]
+	tx-checksum-ipv6: off [fixed]
+	tx-checksum-fcoe-crc: off [fixed]
+	tx-checksum-sctp: off [fixed]
+scatter-gather: off
+	tx-scatter-gather: off [fixed]
+	tx-scatter-gather-fraglist: off [fixed]
+tcp-segmentation-offload: off
+	tx-tcp-segmentation: off [fixed]
+	tx-tcp-ecn-segmentation: off [fixed]
+	tx-tcp-mangleid-segmentation: off [fixed]
+	tx-tcp6-segmentation: off [fixed]
+generic-segmentation-offload: off [requested on]
+generic-receive-offload: on
+large-receive-offload: off [fixed]
+rx-vlan-offload: off [fixed]
+tx-vlan-offload: off [fixed]
+ntuple-filters: off [fixed]
+receive-hashing: off [fixed]
+highdma: off [fixed]
+rx-vlan-filter: off [fixed]
+vlan-challenged: off [fixed]
+tx-lockless: off [fixed]
+netns-local: off [fixed]
+tx-gso-robust: off [fixed]
+tx-fcoe-segmentation: off [fixed]
+tx-gre-segmentation: off [fixed]
+tx-gre-csum-segmentation: off [fixed]
+tx-ipxip4-segmentation: off [fixed]
+tx-ipxip6-segmentation: off [fixed]
+tx-udp_tnl-segmentation: off [fixed]
+tx-udp_tnl-csum-segmentation: off [fixed]
+tx-gso-partial: off [fixed]
+tx-tunnel-remcsum-segmentation: off [fixed]
+tx-sctp-segmentation: off [fixed]
+tx-esp-segmentation: off [fixed]
+tx-udp-segmentation: off [fixed]
+tx-gso-list: off [fixed]
+fcoe-mtu: off [fixed]
+tx-nocache-copy: off
+loopback: off [fixed]
+rx-fcs: off [fixed]
+rx-all: off [fixed]
+tx-vlan-stag-hw-insert: off [fixed]
+rx-vlan-stag-hw-parse: off [fixed]
+rx-vlan-stag-filter: off [fixed]
+l2-fwd-offload: off [fixed]
+hw-tc-offload: off [fixed]
+esp-hw-offload: off [fixed]
+esp-tx-csum-hw-offload: off [fixed]
+rx-udp_tunnel-port-offload: off [fixed]
+tls-hw-tx-offload: off [fixed]
+tls-hw-rx-offload: off [fixed]
+rx-gro-hw: off [fixed]
+tls-hw-record: off [fixed]
+rx-gro-list: off
+macsec-hw-offload: off [fixed]
+rx-udp-gro-forwarding: off
+hsr-tag-ins-offload: off [fixed]
+hsr-tag-rm-offload: off [fixed]
+hsr-fwd-offload: off [fixed]
+hsr-dup-offload: off [fixed]
+[  397.858200] is phylink NULL?: c1c76e00
+mii-diag.c:v2.11 3/21/2005 Donald Becker (becker@scyld.com)
+ http://www.scyld.com/diag/index.html
+  Using the new SIOCGMIIPHY value on PHY 3 (BMCR 0x1040).
+ The autonegotiated capability is 01e0.
+The autonegotiated media type is 100baseTx-FD.
+ Basic mode control register 0x1040: Auto-negotiation enabled.
+ You have link beat, and everything is working OK.
+   This transceiver is capable of  100baseTx-FD 100baseTx 10baseT-FD 10baseT.
+   Able to perform Auto-negotiation, negotiation complete.
+ Your link partner advertised c5e1: Flow-control 100baseTx-FD 100baseTx 10baseT-FD 10baseT, w/ 802.3X flow control.
+   End of basic transceiver information.
+
+libmii.c:v2.11 2/28/2005  Donald Becker (becker@scyld.com)
+ http://www.scyld.com/diag/index.html
+ MII PHY #3 transceiver registers:
+   1040 796d 004d d0b1 1de1 c5e1 000d 2001
+   0000 0600 7800 0000 0000 4007 0006 2000
+   6862 bc1c 0000 0000 082c 0000 2400 0000
+   0000 0000 0000 0000 0000 0000 82a0 0000.
+ Basic mode control register 0x1040: Auto-negotiation enabled.
+ Basic mode status register 0x796d ... 796d.
+   Link status: established.
+   Capable of  100baseTx-FD 100baseTx 10baseT-FD 10baseT.
+   Able to perform Auto-negotiation, negotiation complete.
+ Vendor ID is 00:13:74:--:--:--, model 11 rev. 1.
+   No specific information is known about this transceiver type.
+ I'm advertising 1de1: Flow-control 100baseTx-FD 100baseTx 10baseT-FD 10baseT
+   Advertising no additional info pages.
+   IEEE 802.3 CSMA/CD protocol.
+ Link partner capability is c5e1: Flow-control 100baseTx-FD 100baseTx 10baseT-FD 10baseT.
+   Negotiation  completed.
+ieee-phy: id:0x004dd0b1
+
+   ieee-phy: reg:BMCR(0x00) val:0x1040
+      flags:          -reset -loopback +aneg-enable -power-down -isolate -aneg-restart -collision-test
+      speed:          1000-half
+
+   ieee-phy: reg:BMSR(0x01) val:0x7949
+      capabilities:   -100-b4 +100-f +100-h +[  397.896290] qca8k-ipq4019 c000000.switch: PSGMII calibration!
+10-f +10-h -100-t2-f -100-t2-h
+      flags:          +ext-status -aneg-complete -remote-fault +aneg-capable -link -jabber +ext-register
+[  403.160139] qca8k-ipq4019 c000000.switch: PSGMII work is unstable !!! Let's try to wait a bit ... 10
