@@ -5,4 +5,4 @@
 
 obj-$(CONFIG_QCOM_IPQ4019_ESS_EDMA) += ipq_ess.o
 
-ipq_ess-objs := ipqess_port.o qca8k_phylink.o qca8k_switch.o ipqess_master.o
+ipq_ess-objs := ipq4019_swport.o ipq4019_phylink.o ipq4019_switch.o ipq4019_swmaster.o

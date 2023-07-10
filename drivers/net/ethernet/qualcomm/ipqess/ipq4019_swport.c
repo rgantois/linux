@@ -9,19 +9,17 @@
 #include <net/gro_cells.h>
 #include <net/selftests.h>
 
-#include "ipqess_port.h"
-#include "ipqess_master.h"
-#include "qca8k_phylink.h"
+#include "ipq4019_swport.h"
+#include "ipq4019_swmaster.h"
+#include "ipq4019_phylink.h"
 
-#define IPQESS_NUM_TX_QUEUES 1
-
-static struct device_type ipqess_type = {
+static struct device_type ipq4019_swmaster_type = {
 	.name	= "switch",
 };
 
 /* netdev ops *******************************************/
 
-static void ipqess_port_fast_age(const struct ipqess_port *port)
+static void ipq4019_swport_fast_age(const struct ipq4019_swport *port)
 {
 	struct qca8k_priv *priv = port->sw_priv;
 
@@ -33,7 +31,7 @@ static void ipqess_port_fast_age(const struct ipqess_port *port)
 	//dsa_port_notify_bridge_db_flush()
 }
 
-static void ipqess_port_stp_state_set(struct ipqess_port *port,
+static void ipq4019_swport_stp_state_set(struct ipq4019_swport *port,
 		u8 state)
 {
 	struct qca8k_priv *priv = port->sw_priv;
@@ -62,24 +60,24 @@ static void ipqess_port_stp_state_set(struct ipqess_port *port,
 		  QCA8K_PORT_LOOKUP_STATE_MASK, stp_state);
 }
 
-static void ipqess_port_set_state_now(struct ipqess_port *port,
+static void ipq4019_swport_set_state_now(struct ipq4019_swport *port,
 		u8 state, bool do_fast_age)
 {
 	int err;
 
-	ipqess_port_stp_state_set(port, state);
+	ipq4019_swport_stp_state_set(port, state);
 
 	if ((port->stp_state == BR_STATE_LEARNING ||
 		  port->stp_state == BR_STATE_FORWARDING) &&
 		 (state == BR_STATE_DISABLED ||
 		  state == BR_STATE_BLOCKING ||
 		  state == BR_STATE_LISTENING))
-		ipqess_port_fast_age(port);
+		ipq4019_swport_fast_age(port);
 
 	port->stp_state = state;
 }
 
-static int ipqess_port_enable_rt(struct ipqess_port *port,
+static int ipq4019_swport_enable_rt(struct ipq4019_swport *port,
 		struct phy_device *phy)
 {
 	struct qca8k_priv *priv = port->sw_priv;
@@ -90,16 +88,15 @@ static int ipqess_port_enable_rt(struct ipqess_port *port,
 	phy_support_asym_pause(phy);
 
 	if (!port->bridge)
-		ipqess_port_set_state_now(port, BR_STATE_FORWARDING, false);
+		ipq4019_swport_set_state_now(port, BR_STATE_FORWARDING, false);
 
-	pr_info("is phylink NULL?: %px\n", port->pl);
 	if (port->pl)
 		phylink_start(port->pl);
 
 	return 0;
 }
 
-static void ipqess_port_disable_rt(struct ipqess_port *port)
+static void ipq4019_swport_disable_rt(struct ipq4019_swport *port)
 {
 	struct qca8k_priv *priv = port->sw_priv;
 
@@ -107,53 +104,54 @@ static void ipqess_port_disable_rt(struct ipqess_port *port)
 		phylink_stop(port->pl);
 	
 	if (!port->bridge)
-		ipqess_port_set_state_now(port, BR_STATE_DISABLED, false);
+		ipq4019_swport_set_state_now(port, BR_STATE_DISABLED, false);
 
 	qca8k_port_set_status(priv, port->index, 0);
 	priv->port_enabled_map &= ~BIT(port->index);
 }
 
-static void ipqess_port_disable(struct ipqess_port *port)
+static void ipq4019_swport_disable(struct ipq4019_swport *port)
 {
 	rtnl_lock();
-	ipqess_port_disable_rt(port);
+	ipq4019_swport_disable_rt(port);
 	rtnl_unlock();
 }
 
-static int ipqess_port_open(struct net_device *ndev)
+static int ipq4019_swport_open(struct net_device *ndev)
 {
-	struct ipqess_port *port = netdev_priv(ndev);
+	struct ipq4019_swport *port = netdev_priv(ndev);
 	struct phy_device *phy = ndev->phydev;
 	int ret;
 
-	//!!!!!!!!!!!!!!!!!!
-	//ret = ipqess_open(master, NULL);
+	ret = ipq4019_swmaster_open(ndev);
 
-	ret = ipqess_port_enable_rt(port, phy);
+	ret = ipq4019_swport_enable_rt(port, phy);
 
 	return ret;
 }
 
-static int ipqess_port_close(struct net_device *ndev)
+static int ipq4019_swport_close(struct net_device *ndev)
 {
-	//stop phylink, disable port
-	//...
+	struct ipq4019_swport *port = netdev_priv(ndev);
+
+	ipq4019_swport_disable_rt(port);
+
 	return 0;
 }
 
-static netdev_tx_t ipqess_port_xmit(struct sk_buff *skb, struct net_device *ndev)
+static netdev_tx_t ipq4019_swport_xmit(struct sk_buff *skb, struct net_device *ndev)
 {
 	struct sk_buff *nskb;
-	struct ipqess_port *port = netdev_priv(ndev);
-	struct ipqess_master *master = port->master;
+	struct ipq4019_swport *port = netdev_priv(ndev);
+	struct ipq4019_swmaster *master = port->master;
 
 	dev_sw_netstats_tx_add(ndev, 1, skb->len);
 
 	memset(skb->cb, 0, sizeof(skb->cb));
-	return ipqess_master_xmit(skb, master, port->index);
+	return ipq4019_swmaster_xmit(skb, ndev);
 }
 
-static int ipqess_port_set_mac_address(struct net_device *ndev, void *a)
+static int ipq4019_swport_set_mac_address(struct net_device *ndev, void *a)
 {
 	struct sockaddr *addr = a;
 	int err;
@@ -178,47 +176,47 @@ static int ipqess_port_set_mac_address(struct net_device *ndev, void *a)
 	return 0;
 }
 
-static int ipqess_port_ioctl(struct net_device *ndev, struct ifreq *ifr, int cmd)
+static int ipq4019_swport_ioctl(struct net_device *ndev, struct ifreq *ifr, int cmd)
 {
-	struct ipqess_port *port = netdev_priv(ndev);
+	struct ipq4019_swport *port = netdev_priv(ndev);
 	return phylink_mii_ioctl(port->pl, ifr, cmd);
 }
 
-static int ipqess_port_get_iflink(const struct net_device *dev)
+static int ipq4019_swport_get_iflink(const struct net_device *dev)
 {
 	return dev->ifindex;
 }
 
-static const struct net_device_ops ipqess_netdev_ops = {
-	.ndo_open	 	= ipqess_port_open,
-	.ndo_stop		= ipqess_port_close,
-	.ndo_set_mac_address	= ipqess_port_set_mac_address,
-	.ndo_eth_ioctl		= ipqess_port_ioctl,
-	.ndo_start_xmit		= ipqess_port_xmit,
-	.ndo_get_iflink		= ipqess_port_get_iflink,
+static const struct net_device_ops ipq4019_swmaster_netdev_ops = {
+	.ndo_open	 	= ipq4019_swport_open,
+	.ndo_stop		= ipq4019_swport_close,
+	.ndo_set_mac_address	= ipq4019_swport_set_mac_address,
+	.ndo_eth_ioctl		= ipq4019_swport_ioctl,
+	.ndo_start_xmit		= ipq4019_swport_xmit,
+	.ndo_get_iflink		= ipq4019_swport_get_iflink,
 	/*
-	.ndo_set_rx_mode = ipqess_port_set_rx_mode,
-	.ndo_fdb_dump		= ipqess_port_fdb_dump,
+	.ndo_set_rx_mode = ipq4019_swport_set_rx_mode,
+	.ndo_fdb_dump		= ipq4019_swport_fdb_dump,
 #ifdef CONFIG_NET_POLL_CONTROLLER
-	.ndo_netpoll_setup	= ipqess_port_netpoll_setup,
-	.ndo_netpoll_cleanup	= ipqess_port_netpoll_cleanup,
-	.ndo_poll_controller	= ipqess_port_poll_controller,
+	.ndo_netpoll_setup	= ipq4019_swport_netpoll_setup,
+	.ndo_netpoll_cleanup	= ipq4019_swport_netpoll_cleanup,
+	.ndo_poll_controller	= ipq4019_swport_poll_controller,
 #endif
-	.ndo_setup_tc		= ipqess_port_setup_tc,
-	.ndo_get_stats64	= ipqess_port_get_stats64,
-	.ndo_vlan_rx_add_vid	= ipqess_port_vlan_rx_add_vid,
-	.ndo_vlan_rx_kill_vid	= ipqess_port_vlan_rx_kill_vid,
-	.ndo_change_mtu		= ipqess_port_change_mtu,
-	.ndo_fill_forward_path	= ipqess_port_fill_forward_path,
+	.ndo_setup_tc		= ipq4019_swport_setup_tc,
+	.ndo_get_stats64	= ipq4019_swport_get_stats64,
+	.ndo_vlan_rx_add_vid	= ipq4019_swport_vlan_rx_add_vid,
+	.ndo_vlan_rx_kill_vid	= ipq4019_swport_vlan_rx_kill_vid,
+	.ndo_change_mtu		= ipq4019_swport_change_mtu,
+	.ndo_fill_forward_path	= ipq4019_swport_fill_forward_path,
 	*/
 };
 
 /* netlink ops *************************************************/
 
-static int ipqess_port_phy_connect(struct net_device *ndev, int addr,
+static int ipq4019_swport_phy_connect(struct net_device *ndev, int addr,
 				 u32 flags)
 {
-	struct ipqess_port *port = netdev_priv(ndev);
+	struct ipq4019_swport *port = netdev_priv(ndev);
 
 	ndev->phydev = mdiobus_get_phy(port->mii_bus, addr);
 	if (!ndev->phydev) {
@@ -231,9 +229,9 @@ static int ipqess_port_phy_connect(struct net_device *ndev, int addr,
 	return phylink_connect_phy(port->pl, ndev->phydev);
 }
 
-static int ipqess_port_phy_setup(struct net_device *ndev)
+static int ipq4019_swport_phy_setup(struct net_device *ndev)
 {
-	struct ipqess_port *port = netdev_priv(ndev);
+	struct ipq4019_swport *port = netdev_priv(ndev);
 	struct device_node *port_dn = port->dn;
 	u32 phy_flags = 0;
 	int ret;
@@ -241,7 +239,7 @@ static int ipqess_port_phy_setup(struct net_device *ndev)
 	port->pl_config.dev = &ndev->dev;
 	port->pl_config.type = PHYLINK_NETDEV;
 
-	ret = qca8k_phylink_create(ndev);
+	ret = ipq4019_phylink_create(ndev);
 	if (ret) 
 		return ret;
 
@@ -250,7 +248,7 @@ static int ipqess_port_phy_setup(struct net_device *ndev)
 		/* We could not connect to a designated PHY or SFP, so try to
 		 * use the switch internal MDIO bus instead
 		 */
-		ret = ipqess_port_phy_connect(ndev, port->index, phy_flags);
+		ret = ipq4019_swport_phy_connect(ndev, port->index, phy_flags);
 	}
 	if (ret) {
 		netdev_err(ndev, "failed to connect to PHY: %pe\n",
@@ -269,7 +267,7 @@ static int ipqess_port_phy_setup(struct net_device *ndev)
 
 /* ethtool ops *******************************************/
 
-static void ipqess_port_get_drvinfo(struct net_device *dev,
+static void ipq4019_swport_get_drvinfo(struct net_device *dev,
 				  struct ethtool_drvinfo *drvinfo)
 {
 	strscpy(drvinfo->driver, "qca8k-ipq4019", sizeof(drvinfo->driver));
@@ -277,45 +275,45 @@ static void ipqess_port_get_drvinfo(struct net_device *dev,
 	strscpy(drvinfo->bus_info, "platform", sizeof(drvinfo->bus_info));
 }
 
-static int ipqess_port_get_regs_len(struct net_device *dev)
+static int ipq4019_swport_get_regs_len(struct net_device *dev)
 {
 	return -EOPNOTSUPP;
 }
 
 static void
-ipqess_port_get_regs(struct net_device *dev, struct ethtool_regs *regs, void *_p)
+ipq4019_swport_get_regs(struct net_device *dev, struct ethtool_regs *regs, void *_p)
 {
 	//not supported
 }
 
-static int ipqess_port_nway_reset(struct net_device *dev)
+static int ipq4019_swport_nway_reset(struct net_device *dev)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 
 	return phylink_ethtool_nway_reset(port->pl);
 }
 
-static int ipqess_port_get_eeprom_len(struct net_device *dev)
+static int ipq4019_swport_get_eeprom_len(struct net_device *dev)
 {
 	return 0;
 }
 
-static int ipqess_port_get_eeprom(struct net_device *dev,
+static int ipq4019_swport_get_eeprom(struct net_device *dev,
 				struct ethtool_eeprom *eeprom, u8 *data)
 {
 	return -EOPNOTSUPP;
 }
 
-static int ipqess_port_set_eeprom(struct net_device *dev,
+static int ipq4019_swport_set_eeprom(struct net_device *dev,
 				struct ethtool_eeprom *eeprom, u8 *data)
 {
 	return -EOPNOTSUPP;
 }
 
-static void ipqess_port_get_strings(struct net_device *dev,
+static void ipq4019_swport_get_strings(struct net_device *dev,
 				  uint32_t stringset, uint8_t *data)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 	struct qca8k_priv *priv = port->sw_priv;
 	int i;
 
@@ -338,11 +336,11 @@ static void ipqess_port_get_strings(struct net_device *dev,
 
 }
 
-static void ipqess_port_get_ethtool_stats(struct net_device *dev,
+static void ipq4019_swport_get_ethtool_stats(struct net_device *dev,
 					struct ethtool_stats *stats,
 					uint64_t *data)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 	struct qca8k_priv *priv = port->sw_priv;
 	struct pcpu_sw_netstats *s;
 	unsigned int start;
@@ -389,9 +387,9 @@ static void ipqess_port_get_ethtool_stats(struct net_device *dev,
 	}
 }
 
-static int ipqess_port_get_sset_count(struct net_device *dev, int sset)
+static int ipq4019_swport_get_sset_count(struct net_device *dev, int sset)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 	struct qca8k_priv *priv = port->sw_priv;
 
 	if (sset == ETH_SS_STATS) {
@@ -413,42 +411,42 @@ static int ipqess_port_get_sset_count(struct net_device *dev, int sset)
 	return -EOPNOTSUPP;
 }
 
-static void ipqess_port_get_eth_phy_stats(struct net_device *dev,
+static void ipq4019_swport_get_eth_phy_stats(struct net_device *dev,
 					struct ethtool_eth_phy_stats *phy_stats)
 {
 	//not supported
 }
 
-static void ipqess_port_get_eth_mac_stats(struct net_device *dev,
+static void ipq4019_swport_get_eth_mac_stats(struct net_device *dev,
 					struct ethtool_eth_mac_stats *mac_stats)
 {
 	//not supported
 }
 
 static void
-ipqess_port_get_eth_ctrl_stats(struct net_device *dev,
+ipq4019_swport_get_eth_ctrl_stats(struct net_device *dev,
 			     struct ethtool_eth_ctrl_stats *ctrl_stats)
 {
 	//not supported
 }
 
 static void
-ipqess_port_get_rmon_stats(struct net_device *dev,
+ipq4019_swport_get_rmon_stats(struct net_device *dev,
 			 struct ethtool_rmon_stats *rmon_stats,
 			 const struct ethtool_rmon_hist_range **ranges)
 {
 	//not supported
 }
 
-static void ipqess_port_net_selftest(struct net_device *ndev,
+static void ipq4019_swport_net_selftest(struct net_device *ndev,
 				   struct ethtool_test *etest, u64 *buf)
 {
 	net_selftest(ndev, etest, buf);
 }
 
-static int ipqess_port_set_wol(struct net_device *dev, struct ethtool_wolinfo *w)
+static int ipq4019_swport_set_wol(struct net_device *dev, struct ethtool_wolinfo *w)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 	int ret = -EOPNOTSUPP;
 
 	phylink_ethtool_set_wol(port->pl, w);
@@ -456,16 +454,16 @@ static int ipqess_port_set_wol(struct net_device *dev, struct ethtool_wolinfo *w
 	return ret;
 }
 
-static void ipqess_port_get_wol(struct net_device *dev, struct ethtool_wolinfo *w)
+static void ipq4019_swport_get_wol(struct net_device *dev, struct ethtool_wolinfo *w)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 
 	phylink_ethtool_get_wol(port->pl, w);
 }
 
-static int ipqess_port_set_eee(struct net_device *dev, struct ethtool_eee *eee)
+static int ipq4019_swport_set_eee(struct net_device *dev, struct ethtool_eee *eee)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 	int ret;
 	u32 lpi_en = QCA8K_REG_EEE_CTRL_LPI_EN(port->index);
 	struct qca8k_priv *priv = port->sw_priv;
@@ -495,9 +493,9 @@ static int ipqess_port_set_eee(struct net_device *dev, struct ethtool_eee *eee)
 	return phylink_ethtool_set_eee(port->pl, eee);
 }
 
-static int ipqess_port_get_eee(struct net_device *dev, struct ethtool_eee *e)
+static int ipq4019_swport_get_eee(struct net_device *dev, struct ethtool_eee *e)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 	int ret;
 
 	/* Port's PHY and MAC both need to be EEE capable */
@@ -507,112 +505,112 @@ static int ipqess_port_get_eee(struct net_device *dev, struct ethtool_eee *e)
 	return phylink_ethtool_get_eee(port->pl, e);
 }
 
-static int ipqess_port_get_link_ksettings(struct net_device *dev,
+static int ipq4019_swport_get_link_ksettings(struct net_device *dev,
 					struct ethtool_link_ksettings *cmd)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 
 	return phylink_ethtool_ksettings_get(port->pl, cmd);
 }
 
-static int ipqess_port_set_link_ksettings(struct net_device *dev,
+static int ipq4019_swport_set_link_ksettings(struct net_device *dev,
 					const struct ethtool_link_ksettings *cmd)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 
 	return phylink_ethtool_ksettings_set(port->pl, cmd);
 }
 
-static void ipqess_port_get_pause_stats(struct net_device *dev,
+static void ipq4019_swport_get_pause_stats(struct net_device *dev,
 				  struct ethtool_pause_stats *pause_stats)
 {
 	//not supported
 }
 
-static void ipqess_port_get_pauseparam(struct net_device *dev,
+static void ipq4019_swport_get_pauseparam(struct net_device *dev,
 				     struct ethtool_pauseparam *pause)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 
 	phylink_ethtool_get_pauseparam(port->pl, pause);
 }
 
-static int ipqess_port_set_pauseparam(struct net_device *dev,
+static int ipq4019_swport_set_pauseparam(struct net_device *dev,
 				    struct ethtool_pauseparam *pause)
 {
-	struct ipqess_port *port = netdev_priv(dev);
+	struct ipq4019_swport *port = netdev_priv(dev);
 
 	return phylink_ethtool_set_pauseparam(port->pl, pause);
 }
 
-static int ipqess_port_get_rxnfc(struct net_device *dev,
+static int ipq4019_swport_get_rxnfc(struct net_device *dev,
 			       struct ethtool_rxnfc *nfc, u32 *rule_locs)
 {
 	return -EOPNOTSUPP;
 }
 
-static int ipqess_port_set_rxnfc(struct net_device *dev,
+static int ipq4019_swport_set_rxnfc(struct net_device *dev,
 			       struct ethtool_rxnfc *nfc)
 {
 	return -EOPNOTSUPP;
 }
 
-static int ipqess_port_get_ts_info(struct net_device *dev,
+static int ipq4019_swport_get_ts_info(struct net_device *dev,
 				 struct ethtool_ts_info *ts)
 {
 	return -EOPNOTSUPP;
 }
 
-static int ipqess_port_get_mm(struct net_device *dev,
+static int ipq4019_swport_get_mm(struct net_device *dev,
 			    struct ethtool_mm_state *state)
 {
 	return -EOPNOTSUPP;
 }
 
-static int ipqess_port_set_mm(struct net_device *dev, struct ethtool_mm_cfg *cfg,
+static int ipq4019_swport_set_mm(struct net_device *dev, struct ethtool_mm_cfg *cfg,
 			    struct netlink_ext_ack *extack)
 {
 	return -EOPNOTSUPP;
 }
 
-static void ipqess_port_get_mm_stats(struct net_device *dev,
+static void ipq4019_swport_get_mm_stats(struct net_device *dev,
 				   struct ethtool_mm_stats *stats)
 {
 	//not supported
 }
 
-static const struct ethtool_ops ipqess_port_ethtool_ops = {
-	.get_drvinfo		= ipqess_port_get_drvinfo,
-	.get_regs_len		= ipqess_port_get_regs_len,
-	.get_regs		= ipqess_port_get_regs,
-	.nway_reset		= ipqess_port_nway_reset,
+static const struct ethtool_ops ipq4019_swport_ethtool_ops = {
+	.get_drvinfo		= ipq4019_swport_get_drvinfo,
+	.get_regs_len		= ipq4019_swport_get_regs_len,
+	.get_regs		= ipq4019_swport_get_regs,
+	.nway_reset		= ipq4019_swport_nway_reset,
 	.get_link		= ethtool_op_get_link,
-	.get_eeprom_len		= ipqess_port_get_eeprom_len,
-	.get_eeprom		= ipqess_port_get_eeprom,
-	.set_eeprom		= ipqess_port_set_eeprom,
-	.get_strings		= ipqess_port_get_strings,
-	.get_ethtool_stats	= ipqess_port_get_ethtool_stats,
-	.get_sset_count		= ipqess_port_get_sset_count,
-	.get_eth_phy_stats	= ipqess_port_get_eth_phy_stats,
-	.get_eth_mac_stats	= ipqess_port_get_eth_mac_stats,
-	.get_eth_ctrl_stats	= ipqess_port_get_eth_ctrl_stats,
-	.get_rmon_stats		= ipqess_port_get_rmon_stats,
+	.get_eeprom_len		= ipq4019_swport_get_eeprom_len,
+	.get_eeprom		= ipq4019_swport_get_eeprom,
+	.set_eeprom		= ipq4019_swport_set_eeprom,
+	.get_strings		= ipq4019_swport_get_strings,
+	.get_ethtool_stats	= ipq4019_swport_get_ethtool_stats,
+	.get_sset_count		= ipq4019_swport_get_sset_count,
+	.get_eth_phy_stats	= ipq4019_swport_get_eth_phy_stats,
+	.get_eth_mac_stats	= ipq4019_swport_get_eth_mac_stats,
+	.get_eth_ctrl_stats	= ipq4019_swport_get_eth_ctrl_stats,
+	.get_rmon_stats		= ipq4019_swport_get_rmon_stats,
 	.self_test		= net_selftest,
-	.set_wol		= ipqess_port_set_wol,
-	.get_wol		= ipqess_port_get_wol,
-	.set_eee		= ipqess_port_set_eee,
-	.get_eee		= ipqess_port_get_eee,
-	.get_link_ksettings	= ipqess_port_get_link_ksettings,
-	.set_link_ksettings	= ipqess_port_set_link_ksettings,
-	.get_pause_stats	= ipqess_port_get_pause_stats,
-	.get_pauseparam		= ipqess_port_get_pauseparam,
-	.set_pauseparam		= ipqess_port_set_pauseparam,
-	.get_rxnfc		= ipqess_port_get_rxnfc,
-	.set_rxnfc		= ipqess_port_set_rxnfc,
-	.get_ts_info		= ipqess_port_get_ts_info,
-	.get_mm			= ipqess_port_get_mm,
-	.set_mm			= ipqess_port_set_mm,
-	.get_mm_stats		= ipqess_port_get_mm_stats,
+	.set_wol		= ipq4019_swport_set_wol,
+	.get_wol		= ipq4019_swport_get_wol,
+	.set_eee		= ipq4019_swport_set_eee,
+	.get_eee		= ipq4019_swport_get_eee,
+	.get_link_ksettings	= ipq4019_swport_get_link_ksettings,
+	.set_link_ksettings	= ipq4019_swport_set_link_ksettings,
+	.get_pause_stats	= ipq4019_swport_get_pause_stats,
+	.get_pauseparam		= ipq4019_swport_get_pauseparam,
+	.set_pauseparam		= ipq4019_swport_set_pauseparam,
+	.get_rxnfc		= ipq4019_swport_get_rxnfc,
+	.set_rxnfc		= ipq4019_swport_set_rxnfc,
+	.get_ts_info		= ipq4019_swport_get_ts_info,
+	.get_mm			= ipq4019_swport_get_mm,
+	.set_mm			= ipq4019_swport_set_mm,
+	.get_mm_stats		= ipq4019_swport_get_mm_stats,
 };
 
 /* netlink ***********************************/
@@ -620,11 +618,11 @@ static const struct ethtool_ops ipqess_port_ethtool_ops = {
 #define IFLA_IPQESS_UNSPEC 0
 #define IFLA_IPQESS_MAX 0
 
-static const struct nla_policy ipqess_policy[IFLA_IPQESS_MAX + 1] = {
+static const struct nla_policy ipq4019_swmaster_policy[IFLA_IPQESS_MAX + 1] = {
 	[IFLA_IPQESS_MAX]	= { .type = NLA_U32 },
 };
 
-static int ipqess_changelink(struct net_device *dev, struct nlattr *tb[],
+static int ipq4019_swmaster_changelink(struct net_device *dev, struct nlattr *tb[],
 			  struct nlattr *data[],
 			  struct netlink_ext_ack *extack)
 {
@@ -634,13 +632,13 @@ static int ipqess_changelink(struct net_device *dev, struct nlattr *tb[],
 	return 0;
 }
 
-static size_t ipqess_get_size(const struct net_device *dev)
+static size_t ipq4019_swmaster_get_size(const struct net_device *dev)
 {
 	return nla_total_size(sizeof(u32)) +	/* IFLA_DSA_MASTER  */
 	       0;
 }
 
-static int ipqess_fill_info(struct sk_buff *skb, const struct net_device *dev)
+static int ipq4019_swmaster_fill_info(struct sk_buff *skb, const struct net_device *dev)
 {
 
 	if (nla_put_u32(skb, IFLA_IPQESS_UNSPEC, dev->ifindex))
@@ -649,28 +647,28 @@ static int ipqess_fill_info(struct sk_buff *skb, const struct net_device *dev)
 	return 0;
 }
 
-struct rtnl_link_ops ipqess_link_ops __read_mostly = {
+struct rtnl_link_ops ipq4019_swmaster_link_ops __read_mostly = {
 	.kind			= "switch",
-	.priv_size		= sizeof(struct ipqess_port),
+	.priv_size		= sizeof(struct ipq4019_swport),
 	.maxtype		= 1,
-	.policy			= ipqess_policy,
-	.changelink		= ipqess_changelink,
-	.get_size		=ipqess_get_size,
-	.fill_info		= ipqess_fill_info,
+	.policy			= ipq4019_swmaster_policy,
+	.changelink		= ipq4019_swmaster_changelink,
+	.get_size		=ipq4019_swmaster_get_size,
+	.fill_info		= ipq4019_swmaster_fill_info,
 	.netns_refund		= true,
 };
 
-int ipqess_port_register(u16 index,
+int ipq4019_swport_register(u16 index,
 		struct qca8k_priv *sw_priv,
-		struct ipqess_master *master)
+		struct ipq4019_swmaster *master)
 {
-	int err;
+	int err, i;
 	struct net_device *ndev;
 	struct device_node *port_node;
 	const char *name;
 	int assign_type;
-	struct ipqess_port *port;
-	pr_info("ipqess_port_register %d\n", index);
+	struct ipq4019_swport *port;
+	pr_info("ipq4019_swport_register %d\n", index);
 
 	if (index == 0) {
 		pr_err("IPQESS driver tried to register a CPU port!\n");
@@ -689,8 +687,8 @@ int ipqess_port_register(u16 index,
 		assign_type = NET_NAME_PREDICTABLE;
 	}
 
-	ndev = alloc_netdev_mqs(sizeof(struct ipqess_port), name, assign_type,
-			ether_setup, IPQESS_NUM_TX_QUEUES, 1);
+	ndev = alloc_netdev_mqs(sizeof(struct ipq4019_swport), name, assign_type,
+			ether_setup, 1, 1);
 	if (ndev == NULL)
 		return -ENOMEM;
 
@@ -706,20 +704,20 @@ int ipqess_port_register(u16 index,
 		eth_hw_addr_set(ndev, port->mac);
 	} else {
 		eth_hw_addr_random(ndev);
-		//set port->mac too?
+		//set  too?
 	}
 
-	ndev->netdev_ops = &ipqess_netdev_ops;
+	ndev->netdev_ops = &ipq4019_swmaster_netdev_ops;
 	ndev->max_mtu = QCA8K_MAX_MTU;
-	SET_NETDEV_DEVTYPE(ndev, &ipqess_type);
+	SET_NETDEV_DEVTYPE(ndev, &ipq4019_swmaster_type);
 
 	SET_NETDEV_DEV(ndev, port->sw_priv->dev);
 	//SET_NETDEV_DEVLINK_PORT(ndev, &port->devlink_port);
 	ndev->dev.of_node = port->dn;
-	//ndev->vlan_features = master->vlan_features
+	//ndev->vlan_features = mac->vlan_features
 
-	ndev->rtnl_link_ops = &ipqess_link_ops;
-	ndev->ethtool_ops = &ipqess_port_ethtool_ops;
+	ndev->rtnl_link_ops = &ipq4019_swmaster_link_ops;
+	ndev->ethtool_ops = &ipq4019_swport_ethtool_ops;
 
 	ndev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
 	if (!ndev->tstats) {
@@ -731,11 +729,18 @@ int ipqess_port_register(u16 index,
 	if (err)
 		goto out_free;
 
-	err = ipqess_port_phy_setup(ndev);
+	err = ipq4019_swport_phy_setup(ndev);
 	if (err) {
 		pr_err("error setting up PHY: %d\n", err);
 		goto out_gcells;
 	}
+
+	netif_napi_add_tx(ndev, &master->tx_ring[port->index].napi_tx, ipq4019_swmaster_tx_napi);
+	netif_napi_add(ndev, &master->rx_ring[port->index].napi_rx, ipq4019_swmaster_rx_napi);
+
+	pr_info("num tx queues: %d\n", ndev->num_tx_queues);
+	//bind sole tx queue of port i to tx ring i of MAC driver
+	master->tx_ring[port->index].nq = netdev_get_tx_queue(ndev, 0);
 
 	rtnl_lock();
 

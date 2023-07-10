@@ -6,8 +6,7 @@
 #include <net/gro_cells.h>
 #include <net/devlink.h>
 
-#include "ipqess_port.h"
-#include "ipqess_master.h"
+#include "ipq4019_swmaster.h"
 
 struct qca8k_bridge {
 	struct net_device *net;
@@ -16,9 +15,9 @@ struct qca8k_bridge {
 	refcount_t refcount;
 };
 
-struct ipqess_port {
+struct ipq4019_swport {
 	u16 index;
-	struct ipqess_master *master;
+	struct ipq4019_swmaster *master;
 	struct phylink *pl;
 	struct phylink_config pl_config;
 	struct device_node *dn;
@@ -54,8 +53,8 @@ struct ipqess_port {
 	struct gro_cells	gcells;
 };
 
-int ipqess_port_register(u16 index,
+int ipq4019_swport_register(u16 index,
 		struct qca8k_priv *sw_priv,
-		struct ipqess_master *master);
+		struct ipq4019_swmaster *mac);
 
 #endif

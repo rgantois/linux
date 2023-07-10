@@ -17,44 +17,43 @@
 #include <linux/of_device.h>
 #include <linux/of_mdio.h>
 #include <linux/of_net.h>
+#include <linux/phylink.h>
 #include <linux/platform_device.h>
 #include <linux/reset.h>
 #include <linux/skbuff.h>
 #include <linux/vmalloc.h>
-#include <linux/dsa/qca8k.h>
 #include <net/checksum.h>
 #include <net/dsa.h>
 #include <net/ip6_checksum.h>
 
-#include "ipqess_master.h"
-#include "ipqess_port.h"
-#include "qca8k_switch.h"
+#include "ipq4019_swmaster.h"
+#include "ipq4019_swport.h"
 
 #define IPQESS_RRD_SIZE		16
 #define IPQESS_NEXT_IDX(X, Y)  (((X) + 1) & ((Y) - 1))
 #define IPQESS_TX_DMA_BUF_LEN	0x3fff
 
-static void ipqess_w32(struct ipqess_master *ess, u32 reg, u32 val)
+static void ipq4019_swmaster_w32(struct ipq4019_swmaster *ess, u32 reg, u32 val)
 {
 	writel(val, ess->hw_addr + reg);
 }
 
-static u32 ipqess_r32(struct ipqess_master *ess, u16 reg)
+static u32 ipq4019_swmaster_r32(struct ipq4019_swmaster *ess, u16 reg)
 {
 	return readl(ess->hw_addr + reg);
 }
 
-static void ipqess_m32(struct ipqess_master *ess, u32 mask, u32 val, u16 reg)
+static void ipq4019_swmaster_m32(struct ipq4019_swmaster *ess, u32 mask, u32 val, u16 reg)
 {
-	u32 _val = ipqess_r32(ess, reg);
+	u32 _val = ipq4019_swmaster_r32(ess, reg);
 
 	_val &= ~mask;
 	_val |= val;
 
-	ipqess_w32(ess, reg, _val);
+	ipq4019_swmaster_w32(ess, reg, _val);
 }
 
-void ipqess_update_hw_stats(struct ipqess_master *ess)
+void ipq4019_swmaster_update_hw_stats(struct ipq4019_swmaster *ess)
 {
 	u32 *p;
 	u32 stat;
@@ -62,39 +61,39 @@ void ipqess_update_hw_stats(struct ipqess_master *ess)
 
 	lockdep_assert_held(&ess->stats_lock);
 
-	p = (u32 *)&ess->ipqess_stats;
+	p = (u32 *)&ess->ipq4019_swmaster_stats;
 	for (i = 0; i < IPQESS_MAX_TX_QUEUE; i++) {
-		stat = ipqess_r32(ess, IPQESS_REG_TX_STAT_PKT_Q(i));
+		stat = ipq4019_swmaster_r32(ess, IPQESS_REG_TX_STAT_PKT_Q(i));
 		*p += stat;
 		p++;
 	}
 
 	for (i = 0; i < IPQESS_MAX_TX_QUEUE; i++) {
-		stat = ipqess_r32(ess, IPQESS_REG_TX_STAT_BYTE_Q(i));
+		stat = ipq4019_swmaster_r32(ess, IPQESS_REG_TX_STAT_BYTE_Q(i));
 		*p += stat;
 		p++;
 	}
 
 	for (i = 0; i < IPQESS_MAX_RX_QUEUE; i++) {
-		stat = ipqess_r32(ess, IPQESS_REG_RX_STAT_PKT_Q(i));
+		stat = ipq4019_swmaster_r32(ess, IPQESS_REG_RX_STAT_PKT_Q(i));
 		*p += stat;
 		p++;
 	}
 
 	for (i = 0; i < IPQESS_MAX_RX_QUEUE; i++) {
-		stat = ipqess_r32(ess, IPQESS_REG_RX_STAT_BYTE_Q(i));
+		stat = ipq4019_swmaster_r32(ess, IPQESS_REG_RX_STAT_BYTE_Q(i));
 		*p += stat;
 		p++;
 	}
 }
 
-static int ipqess_tx_ring_alloc(struct ipqess_master *ess)
+static int ipq4019_swmaster_tx_ring_alloc(struct ipq4019_swmaster *ess)
 {
 	struct device *dev = &ess->pdev->dev;
 	int i;
 
 	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
-		struct ipqess_tx_ring *tx_ring = &ess->tx_ring[i];
+		struct ipq4019_swmaster_tx_ring *tx_ring = &ess->tx_ring[i];
 		size_t size;
 		u32 idx;
 
@@ -102,38 +101,38 @@ static int ipqess_tx_ring_alloc(struct ipqess_master *ess)
 		tx_ring->ring_id = i;
 		tx_ring->idx = i * 4;
 		tx_ring->count = IPQESS_TX_RING_SIZE;
-		tx_ring->nq = netdev_get_tx_queue(ess->netdev, i);
+		//nq is bound during swport register
 
-		size = sizeof(struct ipqess_buf) * IPQESS_TX_RING_SIZE;
+		size = sizeof(struct ipq4019_swmaster_buf) * IPQESS_TX_RING_SIZE;
 		tx_ring->buf = devm_kzalloc(dev, size, GFP_KERNEL);
 		if (!tx_ring->buf)
 			return -ENOMEM;
 
-		size = sizeof(struct ipqess_tx_desc) * IPQESS_TX_RING_SIZE;
+		size = sizeof(struct ipq4019_swmaster_tx_desc) * IPQESS_TX_RING_SIZE;
 		tx_ring->hw_desc = dmam_alloc_coherent(dev, size, &tx_ring->dma,
 						       GFP_KERNEL);
 		if (!tx_ring->hw_desc)
 			return -ENOMEM;
 
-		ipqess_w32(ess, IPQESS_REG_TPD_BASE_ADDR_Q(tx_ring->idx),
+		ipq4019_swmaster_w32(ess, IPQESS_REG_TPD_BASE_ADDR_Q(tx_ring->idx),
 			   (u32)tx_ring->dma);
 
-		idx = ipqess_r32(ess, IPQESS_REG_TPD_IDX_Q(tx_ring->idx));
+		idx = ipq4019_swmaster_r32(ess, IPQESS_REG_TPD_IDX_Q(tx_ring->idx));
 		idx >>= IPQESS_TPD_CONS_IDX_SHIFT; /* need u32 here */
 		idx &= 0xffff;
 		tx_ring->head = idx;
 		tx_ring->tail = idx;
 
-		ipqess_m32(ess, IPQESS_TPD_PROD_IDX_MASK << IPQESS_TPD_PROD_IDX_SHIFT,
+		ipq4019_swmaster_m32(ess, IPQESS_TPD_PROD_IDX_MASK << IPQESS_TPD_PROD_IDX_SHIFT,
 			   idx, IPQESS_REG_TPD_IDX_Q(tx_ring->idx));
-		ipqess_w32(ess, IPQESS_REG_TX_SW_CONS_IDX_Q(tx_ring->idx), idx);
-		ipqess_w32(ess, IPQESS_REG_TPD_RING_SIZE, IPQESS_TX_RING_SIZE);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_TX_SW_CONS_IDX_Q(tx_ring->idx), idx);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_TPD_RING_SIZE, IPQESS_TX_RING_SIZE);
 	}
 
 	return 0;
 }
 
-static int ipqess_tx_unmap_and_free(struct device *dev, struct ipqess_buf *buf)
+static int ipq4019_swmaster_tx_unmap_and_free(struct device *dev, struct ipq4019_swmaster_buf *buf)
 {
 	int len = 0;
 
@@ -152,7 +151,7 @@ static int ipqess_tx_unmap_and_free(struct device *dev, struct ipqess_buf *buf)
 	return len;
 }
 
-static void ipqess_tx_ring_free(struct ipqess_master *ess)
+static void ipq4019_swmaster_tx_ring_free(struct ipq4019_swmaster *ess)
 {
 	int i;
 
@@ -163,19 +162,19 @@ static void ipqess_tx_ring_free(struct ipqess_master *ess)
 			continue;
 
 		for (j = 0; j < IPQESS_TX_RING_SIZE; j++) {
-			struct ipqess_buf *buf = &ess->tx_ring[i].buf[j];
+			struct ipq4019_swmaster_buf *buf = &ess->tx_ring[i].buf[j];
 
-			ipqess_tx_unmap_and_free(&ess->pdev->dev, buf);
+			ipq4019_swmaster_tx_unmap_and_free(&ess->pdev->dev, buf);
 		}
 
 		ess->tx_ring[i].buf = NULL;
 	}
 }
 
-static int ipqess_rx_buf_prepare(struct ipqess_buf *buf,
-				 struct ipqess_rx_ring *rx_ring)
+static int ipq4019_swmaster_rx_buf_prepare(struct ipq4019_swmaster_buf *buf,
+				 struct ipq4019_swmaster_rx_ring *rx_ring)
 {
-	memset(buf->skb->data, 0, sizeof(struct ipqess_rx_desc));
+	memset(buf->skb->data, 0, sizeof(struct ipq4019_swmaster_rx_desc));
 
 	buf->dma = dma_map_single(rx_ring->ppdev, buf->skb->data,
 				  IPQESS_RX_HEAD_BUFF_SIZE, DMA_FROM_DEVICE);
@@ -186,10 +185,10 @@ static int ipqess_rx_buf_prepare(struct ipqess_buf *buf,
 	}
 
 	buf->length = IPQESS_RX_HEAD_BUFF_SIZE;
-	rx_ring->hw_desc[rx_ring->head] = (struct ipqess_rx_desc *)buf->dma;
+	rx_ring->hw_desc[rx_ring->head] = (struct ipq4019_swmaster_rx_desc *)buf->dma;
 	rx_ring->head = (rx_ring->head + 1) % IPQESS_RX_RING_SIZE;
 
-	ipqess_m32(rx_ring->ess, IPQESS_RFD_PROD_IDX_BITS,
+	ipq4019_swmaster_m32(rx_ring->ess, IPQESS_RFD_PROD_IDX_BITS,
 		   (rx_ring->head + IPQESS_RX_RING_SIZE - 1) % IPQESS_RX_RING_SIZE,
 		   IPQESS_REG_RFD_IDX_Q(rx_ring->idx));
 
@@ -197,20 +196,20 @@ static int ipqess_rx_buf_prepare(struct ipqess_buf *buf,
 }
 
 /* locking is handled by the caller */
-static int ipqess_rx_buf_alloc_napi(struct ipqess_rx_ring *rx_ring)
+static int ipq4019_swmaster_rx_buf_alloc_napi(struct ipq4019_swmaster_rx_ring *rx_ring)
 {
-	struct ipqess_buf *buf = &rx_ring->buf[rx_ring->head];
+	struct ipq4019_swmaster_buf *buf = &rx_ring->buf[rx_ring->head];
 
 	buf->skb = napi_alloc_skb(&rx_ring->napi_rx, IPQESS_RX_HEAD_BUFF_SIZE);
 	if (!buf->skb)
 		return -ENOMEM;
 
-	return ipqess_rx_buf_prepare(buf, rx_ring);
+	return ipq4019_swmaster_rx_buf_prepare(buf, rx_ring);
 }
 
-static int ipqess_rx_buf_alloc(struct ipqess_rx_ring *rx_ring)
+static int ipq4019_swmaster_rx_buf_alloc(struct ipq4019_swmaster_rx_ring *rx_ring)
 {
-	struct ipqess_buf *buf = &rx_ring->buf[rx_ring->head];
+	struct ipq4019_swmaster_buf *buf = &rx_ring->buf[rx_ring->head];
 
 	buf->skb = netdev_alloc_skb_ip_align(rx_ring->ess->netdev,
 					     IPQESS_RX_HEAD_BUFF_SIZE);
@@ -218,20 +217,20 @@ static int ipqess_rx_buf_alloc(struct ipqess_rx_ring *rx_ring)
 	if (!buf->skb)
 		return -ENOMEM;
 
-	return ipqess_rx_buf_prepare(buf, rx_ring);
+	return ipq4019_swmaster_rx_buf_prepare(buf, rx_ring);
 }
 
-static void ipqess_refill_work(struct work_struct *work)
+static void ipq4019_swmaster_refill_work(struct work_struct *work)
 {
-	struct ipqess_rx_ring_refill *rx_refill = container_of(work,
-		struct ipqess_rx_ring_refill, refill_work);
-	struct ipqess_rx_ring *rx_ring = rx_refill->rx_ring;
+	struct ipq4019_swmaster_rx_ring_refill *rx_refill = container_of(work,
+		struct ipq4019_swmaster_rx_ring_refill, refill_work);
+	struct ipq4019_swmaster_rx_ring *rx_ring = rx_refill->rx_ring;
 	int refill = 0;
 
 	/* don't let this loop by accident. */
 	while (atomic_dec_and_test(&rx_ring->refill_count)) {
 		napi_disable(&rx_ring->napi_rx);
-		if (ipqess_rx_buf_alloc(rx_ring)) {
+		if (ipq4019_swmaster_rx_buf_alloc(rx_ring)) {
 			refill++;
 			dev_dbg(rx_ring->ppdev,
 				"Not all buffers were reallocated");
@@ -243,7 +242,7 @@ static void ipqess_refill_work(struct work_struct *work)
 		schedule_work(&rx_refill->refill_work);
 }
 
-static int ipqess_rx_ring_alloc(struct ipqess_master *ess)
+static int ipq4019_swmaster_rx_ring_alloc(struct ipq4019_swmaster *ess)
 {
 	int i;
 
@@ -256,7 +255,7 @@ static int ipqess_rx_ring_alloc(struct ipqess_master *ess)
 		ess->rx_ring[i].idx = i * 2;
 
 		ess->rx_ring[i].buf = devm_kzalloc(&ess->pdev->dev,
-						   sizeof(struct ipqess_buf) * IPQESS_RX_RING_SIZE,
+						   sizeof(struct ipq4019_swmaster_buf) * IPQESS_RX_RING_SIZE,
 						   GFP_KERNEL);
 
 		if (!ess->rx_ring[i].buf)
@@ -264,31 +263,31 @@ static int ipqess_rx_ring_alloc(struct ipqess_master *ess)
 
 		ess->rx_ring[i].hw_desc =
 			dmam_alloc_coherent(&ess->pdev->dev,
-					    sizeof(struct ipqess_rx_desc) * IPQESS_RX_RING_SIZE,
+					    sizeof(struct ipq4019_swmaster_rx_desc) * IPQESS_RX_RING_SIZE,
 					    &ess->rx_ring[i].dma, GFP_KERNEL);
 
 		if (!ess->rx_ring[i].hw_desc)
 			return -ENOMEM;
 
 		for (j = 0; j < IPQESS_RX_RING_SIZE; j++)
-			if (ipqess_rx_buf_alloc(&ess->rx_ring[i]) < 0)
+			if (ipq4019_swmaster_rx_buf_alloc(&ess->rx_ring[i]) < 0)
 				return -ENOMEM;
 
 		ess->rx_refill[i].rx_ring = &ess->rx_ring[i];
-		INIT_WORK(&ess->rx_refill[i].refill_work, ipqess_refill_work);
+		INIT_WORK(&ess->rx_refill[i].refill_work, ipq4019_swmaster_refill_work);
 
-		ipqess_w32(ess, IPQESS_REG_RFD_BASE_ADDR_Q(ess->rx_ring[i].idx),
+		ipq4019_swmaster_w32(ess, IPQESS_REG_RFD_BASE_ADDR_Q(ess->rx_ring[i].idx),
 			   (u32)(ess->rx_ring[i].dma));
 	}
 
-	ipqess_w32(ess, IPQESS_REG_RX_DESC0,
+	ipq4019_swmaster_w32(ess, IPQESS_REG_RX_DESC0,
 		   (IPQESS_RX_HEAD_BUFF_SIZE << IPQESS_RX_BUF_SIZE_SHIFT) |
 		   (IPQESS_RX_RING_SIZE << IPQESS_RFD_RING_SIZE_SHIFT));
 
 	return 0;
 }
 
-static void ipqess_rx_ring_free(struct ipqess_master *ess)
+static void ipq4019_swmaster_rx_ring_free(struct ipq4019_swmaster *ess)
 {
 	int i;
 
@@ -308,31 +307,31 @@ static void ipqess_rx_ring_free(struct ipqess_master *ess)
 	}
 }
 
-static struct net_device_stats *ipqess_get_stats(struct net_device *netdev)
+static struct net_device_stats *ipq4019_swmaster_get_stats(struct net_device *netdev)
 {
-	struct ipqess_master *ess = netdev_priv(netdev);
+	struct ipq4019_swmaster *ess = netdev_priv(netdev);
 
 	spin_lock(&ess->stats_lock);
-	ipqess_update_hw_stats(ess);
+	ipq4019_swmaster_update_hw_stats(ess);
 	spin_unlock(&ess->stats_lock);
 
 	return &ess->stats;
 }
 
-static int ipqess_rx_poll(struct ipqess_rx_ring *rx_ring, int budget)
+static int ipq4019_swmaster_rx_poll(struct ipq4019_swmaster_rx_ring *rx_ring, int budget)
 {
 	u32 length = 0, num_desc, tail, rx_ring_tail;
 	int done = 0;
 
 	rx_ring_tail = rx_ring->tail;
 
-	tail = ipqess_r32(rx_ring->ess, IPQESS_REG_RFD_IDX_Q(rx_ring->idx));
+	tail = ipq4019_swmaster_r32(rx_ring->ess, IPQESS_REG_RFD_IDX_Q(rx_ring->idx));
 	tail >>= IPQESS_RFD_CONS_IDX_SHIFT;
 	tail &= IPQESS_RFD_CONS_IDX_MASK;
 
 	while (done < budget) {
 		struct dsa_oob_tag_info *tag_info;
-		struct ipqess_rx_desc *rd;
+		struct ipq4019_swmaster_rx_desc *rd;
 		struct sk_buff *skb;
 
 		if (rx_ring_tail == tail)
@@ -344,7 +343,7 @@ static int ipqess_rx_poll(struct ipqess_rx_ring *rx_ring, int budget)
 				 DMA_FROM_DEVICE);
 
 		skb = xchg(&rx_ring->buf[rx_ring_tail].skb, NULL);
-		rd = (struct ipqess_rx_desc *)skb->data;
+		rd = (struct ipq4019_swmaster_rx_desc *)skb->data;
 		rx_ring_tail = IPQESS_NEXT_IDX(rx_ring_tail, IPQESS_RX_RING_SIZE);
 
 		/* Check if RRD is valid */
@@ -412,7 +411,9 @@ static int ipqess_rx_poll(struct ipqess_rx_ring *rx_ring, int budget)
 					       le16_to_cpu(rd->rrd4));
 
 		if (likely(rx_ring->ess->dsa_ports)) {
-			//insert tag
+			tag_info = skb_ext_add(skb, SKB_EXT_DSA_OOB);
+			tag_info->port = FIELD_GET(IPQESS_RRD_PORT_ID_MASK,
+						   le16_to_cpu(rd->rrd1));
 		}
 
 		napi_gro_receive(&rx_ring->napi_rx, skb);
@@ -425,7 +426,7 @@ skip:
 
 		num_desc += atomic_xchg(&rx_ring->refill_count, 0);
 		while (num_desc) {
-			if (ipqess_rx_buf_alloc_napi(rx_ring)) {
+			if (ipq4019_swmaster_rx_buf_alloc_napi(rx_ring)) {
 				num_desc = atomic_add_return(num_desc,
 							     &rx_ring->refill_count);
 				if (num_desc >= DIV_ROUND_UP(IPQESS_RX_RING_SIZE * 4, 7))
@@ -436,32 +437,32 @@ skip:
 		}
 	}
 
-	ipqess_w32(rx_ring->ess, IPQESS_REG_RX_SW_CONS_IDX_Q(rx_ring->idx),
+	ipq4019_swmaster_w32(rx_ring->ess, IPQESS_REG_RX_SW_CONS_IDX_Q(rx_ring->idx),
 		   rx_ring_tail);
 	rx_ring->tail = rx_ring_tail;
 
 	return done;
 }
 
-static int ipqess_tx_complete(struct ipqess_tx_ring *tx_ring, int budget)
+static int ipq4019_swmaster_tx_complete(struct ipq4019_swmaster_tx_ring *tx_ring, int budget)
 {
 	int total = 0, ret;
 	int done = 0;
 	u32 tail;
 
-	tail = ipqess_r32(tx_ring->ess, IPQESS_REG_TPD_IDX_Q(tx_ring->idx));
+	tail = ipq4019_swmaster_r32(tx_ring->ess, IPQESS_REG_TPD_IDX_Q(tx_ring->idx));
 	tail >>= IPQESS_TPD_CONS_IDX_SHIFT;
 	tail &= IPQESS_TPD_CONS_IDX_MASK;
 
 	do {
-		ret = ipqess_tx_unmap_and_free(&tx_ring->ess->pdev->dev,
+		ret = ipq4019_swmaster_tx_unmap_and_free(&tx_ring->ess->pdev->dev,
 					       &tx_ring->buf[tx_ring->tail]);
 		tx_ring->tail = IPQESS_NEXT_IDX(tx_ring->tail, tx_ring->count);
 
 		total += ret;
 	} while ((++done < budget) && (tx_ring->tail != tail));
 
-	ipqess_w32(tx_ring->ess, IPQESS_REG_TX_SW_CONS_IDX_Q(tx_ring->idx),
+	ipq4019_swmaster_w32(tx_ring->ess, IPQESS_REG_TX_SW_CONS_IDX_Q(tx_ring->idx),
 		   tx_ring->tail);
 
 	if (netif_tx_queue_stopped(tx_ring->nq)) {
@@ -475,107 +476,107 @@ static int ipqess_tx_complete(struct ipqess_tx_ring *tx_ring, int budget)
 	return done;
 }
 
-static int ipqess_tx_napi(struct napi_struct *napi, int budget)
+int ipq4019_swmaster_tx_napi(struct napi_struct *napi, int budget)
 {
-	struct ipqess_tx_ring *tx_ring = container_of(napi, struct ipqess_tx_ring,
+	struct ipq4019_swmaster_tx_ring *tx_ring = container_of(napi, struct ipq4019_swmaster_tx_ring,
 						    napi_tx);
 	int work_done = 0;
 	u32 tx_status;
 
-	tx_status = ipqess_r32(tx_ring->ess, IPQESS_REG_TX_ISR);
+	tx_status = ipq4019_swmaster_r32(tx_ring->ess, IPQESS_REG_TX_ISR);
 	tx_status &= BIT(tx_ring->idx);
 
-	work_done = ipqess_tx_complete(tx_ring, budget);
+	work_done = ipq4019_swmaster_tx_complete(tx_ring, budget);
 
-	ipqess_w32(tx_ring->ess, IPQESS_REG_TX_ISR, tx_status);
+	ipq4019_swmaster_w32(tx_ring->ess, IPQESS_REG_TX_ISR, tx_status);
 
 	if (likely(work_done < budget)) {
 		if (napi_complete_done(napi, work_done))
-			ipqess_w32(tx_ring->ess,
+			ipq4019_swmaster_w32(tx_ring->ess,
 				   IPQESS_REG_TX_INT_MASK_Q(tx_ring->idx), 0x1);
 	}
 
 	return work_done;
 }
 
-static int ipqess_rx_napi(struct napi_struct *napi, int budget)
+int ipq4019_swmaster_rx_napi(struct napi_struct *napi, int budget)
 {
-	struct ipqess_rx_ring *rx_ring = container_of(napi, struct ipqess_rx_ring,
+	struct ipq4019_swmaster_rx_ring *rx_ring = container_of(napi, struct ipq4019_swmaster_rx_ring,
 						    napi_rx);
-	struct ipqess_master *ess = rx_ring->ess;
+	struct ipq4019_swmaster *ess = rx_ring->ess;
 	u32 rx_mask = BIT(rx_ring->idx);
 	int remaining_budget = budget;
 	int rx_done;
 	u32 status;
 
 	do {
-		ipqess_w32(ess, IPQESS_REG_RX_ISR, rx_mask);
-		rx_done = ipqess_rx_poll(rx_ring, remaining_budget);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_RX_ISR, rx_mask);
+		rx_done = ipq4019_swmaster_rx_poll(rx_ring, remaining_budget);
 		remaining_budget -= rx_done;
 
-		status = ipqess_r32(ess, IPQESS_REG_RX_ISR);
+		status = ipq4019_swmaster_r32(ess, IPQESS_REG_RX_ISR);
 	} while (remaining_budget > 0 && (status & rx_mask));
 
 	if (remaining_budget <= 0)
 		return budget;
 
 	if (napi_complete_done(napi, budget - remaining_budget))
-		ipqess_w32(ess, IPQESS_REG_RX_INT_MASK_Q(rx_ring->idx), 0x1);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_RX_INT_MASK_Q(rx_ring->idx), 0x1);
 
 	return budget - remaining_budget;
 }
 
-static irqreturn_t ipqess_interrupt_tx(int irq, void *priv)
+static irqreturn_t ipq4019_swmaster_interrupt_tx(int irq, void *priv)
 {
-	struct ipqess_tx_ring *tx_ring = (struct ipqess_tx_ring *)priv;
+	struct ipq4019_swmaster_tx_ring *tx_ring = (struct ipq4019_swmaster_tx_ring *)priv;
 
 	if (likely(napi_schedule_prep(&tx_ring->napi_tx))) {
 		__napi_schedule(&tx_ring->napi_tx);
-		ipqess_w32(tx_ring->ess, IPQESS_REG_TX_INT_MASK_Q(tx_ring->idx),
+		ipq4019_swmaster_w32(tx_ring->ess, IPQESS_REG_TX_INT_MASK_Q(tx_ring->idx),
 			   0x0);
 	}
 
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t ipqess_interrupt_rx(int irq, void *priv)
+static irqreturn_t ipq4019_swmaster_interrupt_rx(int irq, void *priv)
 {
-	struct ipqess_rx_ring *rx_ring = (struct ipqess_rx_ring *)priv;
+	struct ipq4019_swmaster_rx_ring *rx_ring = (struct ipq4019_swmaster_rx_ring *)priv;
 
 	if (likely(napi_schedule_prep(&rx_ring->napi_rx))) {
 		__napi_schedule(&rx_ring->napi_rx);
-		ipqess_w32(rx_ring->ess, IPQESS_REG_RX_INT_MASK_Q(rx_ring->idx),
+		ipq4019_swmaster_w32(rx_ring->ess, IPQESS_REG_RX_INT_MASK_Q(rx_ring->idx),
 			   0x0);
 	}
 
 	return IRQ_HANDLED;
 }
 
-static void ipqess_irq_enable(struct ipqess_master *ess)
+static void ipq4019_swmaster_irq_enable(struct ipq4019_swmaster *ess)
 {
 	int i;
 
-	ipqess_w32(ess, IPQESS_REG_RX_ISR, 0xff);
-	ipqess_w32(ess, IPQESS_REG_TX_ISR, 0xffff);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_RX_ISR, 0xff);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_TX_ISR, 0xffff);
 	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
-		ipqess_w32(ess, IPQESS_REG_RX_INT_MASK_Q(ess->rx_ring[i].idx), 1);
-		ipqess_w32(ess, IPQESS_REG_TX_INT_MASK_Q(ess->tx_ring[i].idx), 1);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_RX_INT_MASK_Q(ess->rx_ring[i].idx), 1);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_TX_INT_MASK_Q(ess->tx_ring[i].idx), 1);
 	}
 }
 
-static void ipqess_irq_disable(struct ipqess_master *ess)
+static void ipq4019_swmaster_irq_disable(struct ipq4019_swmaster *ess)
 {
 	int i;
 
 	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
-		ipqess_w32(ess, IPQESS_REG_RX_INT_MASK_Q(ess->rx_ring[i].idx), 0);
-		ipqess_w32(ess, IPQESS_REG_TX_INT_MASK_Q(ess->tx_ring[i].idx), 0);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_RX_INT_MASK_Q(ess->rx_ring[i].idx), 0);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_TX_INT_MASK_Q(ess->tx_ring[i].idx), 0);
 	}
 }
 
-static int __init ipqess_init(struct net_device *netdev)
+static int __init ipq4019_swmaster_init(struct net_device *netdev)
 {
-	struct ipqess_master *ess = netdev_priv(netdev);
+	struct ipq4019_swmaster *ess = netdev_priv(netdev);
 	struct device_node *of_node = ess->pdev->dev.of_node;
 	int ret;
 
@@ -583,55 +584,59 @@ static int __init ipqess_init(struct net_device *netdev)
 	if (ret)
 		eth_hw_addr_random(netdev);
 
-	return 0;
+	return phylink_of_phy_connect(ess->phylink, of_node, 0);
 }
 
-static void ipqess_uninit(struct net_device *netdev)
+static void ipq4019_swmaster_uninit(struct net_device *netdev)
 {
-	//nothing to do here
+	struct ipq4019_swmaster *ess = netdev_priv(netdev);
+
+	phylink_disconnect_phy(ess->phylink);
 }
 
-static int ipqess_open(struct net_device *netdev)
+int ipq4019_swmaster_open(struct net_device *netdev)
 {
-	struct ipqess_master *ess = netdev_priv(netdev);
+	struct ipq4019_swport *port = netdev_priv(netdev);
+	struct ipq4019_swmaster *ess = port->master;
 	int i, err;
+	//!!!!!!!!!!!!!! boundary check
+	int qid = port->index;
 
-	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
-		int qid;
 
-		qid = ess->tx_ring[i].idx;
-		err = devm_request_irq(&netdev->dev, ess->tx_irq[qid],
-				       ipqess_interrupt_tx, 0,
-				       ess->tx_irq_names[qid],
-				       &ess->tx_ring[i]);
-		if (err)
-			return err;
+	pr_info("swmaster_open %px\n", ess);
+	qid = ess->tx_ring[i].idx;
+	err = devm_request_irq(&netdev->dev, ess->tx_irq[qid],
+				    ipq4019_swmaster_interrupt_tx, 0,
+				    ess->tx_irq_names[qid],
+				    &ess->tx_ring[i]);
+	if (err)
+		return err;
 
-		qid = ess->rx_ring[i].idx;
-		err = devm_request_irq(&netdev->dev, ess->rx_irq[qid],
-				       ipqess_interrupt_rx, 0,
-				       ess->rx_irq_names[qid],
-				       &ess->rx_ring[i]);
-		if (err)
-			return err;
+	qid = ess->rx_ring[i].idx;
+	err = devm_request_irq(&netdev->dev, ess->rx_irq[qid],
+				    ipq4019_swmaster_interrupt_rx, 0,
+				    ess->rx_irq_names[qid],
+				    &ess->rx_ring[i]);
+	if (err)
+		return err;
 
-		napi_enable(&ess->tx_ring[i].napi_tx);
-		napi_enable(&ess->rx_ring[i].napi_rx);
-	}
+	napi_enable(&ess->tx_ring[i].napi_tx);
+	napi_enable(&ess->rx_ring[i].napi_rx);
 
-	ipqess_irq_enable(ess);
+	ipq4019_swmaster_irq_enable(ess);
 	netif_tx_start_all_queues(netdev);
 
 	return 0;
 }
 
-static int ipqess_stop(struct net_device *netdev)
+static int ipq4019_swmaster_stop(struct net_device *netdev)
 {
-	struct ipqess_master *ess = netdev_priv(netdev);
+	struct ipq4019_swmaster *ess = netdev_priv(netdev);
 	int i;
 
 	netif_tx_stop_all_queues(netdev);
-	ipqess_irq_disable(ess);
+	phylink_stop(ess->phylink);
+	ipq4019_swmaster_irq_disable(ess);
 	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
 		napi_disable(&ess->tx_ring[i].napi_tx);
 		napi_disable(&ess->rx_ring[i].napi_rx);
@@ -640,7 +645,14 @@ static int ipqess_stop(struct net_device *netdev)
 	return 0;
 }
 
-static u16 ipqess_tx_desc_available(struct ipqess_tx_ring *tx_ring)
+static int ipq4019_swmaster_do_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
+{
+	struct ipq4019_swmaster *ess = netdev_priv(netdev);
+
+	return phylink_mii_ioctl(ess->phylink, ifr, cmd);
+}
+
+static u16 ipq4019_swmaster_tx_desc_available(struct ipq4019_swmaster_tx_ring *tx_ring)
 {
 	u16 count = 0;
 
@@ -652,7 +664,7 @@ static u16 ipqess_tx_desc_available(struct ipqess_tx_ring *tx_ring)
 	return count;
 }
 
-static int ipqess_cal_txd_req(struct sk_buff *skb)
+static int ipq4019_swmaster_cal_txd_req(struct sk_buff *skb)
 {
 	int tpds;
 
@@ -666,15 +678,15 @@ static int ipqess_cal_txd_req(struct sk_buff *skb)
 	return tpds;
 }
 
-static struct ipqess_buf *ipqess_get_tx_buffer(struct ipqess_tx_ring *tx_ring,
-					       struct ipqess_tx_desc *desc)
+static struct ipq4019_swmaster_buf *ipq4019_swmaster_get_tx_buffer(struct ipq4019_swmaster_tx_ring *tx_ring,
+					       struct ipq4019_swmaster_tx_desc *desc)
 {
 	return &tx_ring->buf[desc - tx_ring->hw_desc];
 }
 
-static struct ipqess_tx_desc *ipqess_tx_desc_next(struct ipqess_tx_ring *tx_ring)
+static struct ipq4019_swmaster_tx_desc *ipq4019_swmaster_tx_desc_next(struct ipq4019_swmaster_tx_ring *tx_ring)
 {
-	struct ipqess_tx_desc *desc;
+	struct ipq4019_swmaster_tx_desc *desc;
 
 	desc = &tx_ring->hw_desc[tx_ring->head];
 	tx_ring->head = IPQESS_NEXT_IDX(tx_ring->head, tx_ring->count);
@@ -682,12 +694,12 @@ static struct ipqess_tx_desc *ipqess_tx_desc_next(struct ipqess_tx_ring *tx_ring
 	return desc;
 }
 
-static void ipqess_rollback_tx(struct ipqess_master *eth,
-			       struct ipqess_tx_desc *first_desc, int ring_id)
+static void ipq4019_swmaster_rollback_tx(struct ipq4019_swmaster *eth,
+			       struct ipq4019_swmaster_tx_desc *first_desc, int ring_id)
 {
-	struct ipqess_tx_ring *tx_ring = &eth->tx_ring[ring_id];
-	struct ipqess_tx_desc *desc = NULL;
-	struct ipqess_buf *buf;
+	struct ipq4019_swmaster_tx_ring *tx_ring = &eth->tx_ring[ring_id];
+	struct ipq4019_swmaster_tx_desc *desc = NULL;
+	struct ipq4019_swmaster_buf *buf;
 	u16 start_index, index;
 
 	start_index = first_desc - tx_ring->hw_desc;
@@ -696,7 +708,7 @@ static void ipqess_rollback_tx(struct ipqess_master *eth,
 	while (index != tx_ring->head) {
 		desc = &tx_ring->hw_desc[index];
 		buf = &tx_ring->buf[index];
-		ipqess_tx_unmap_and_free(&eth->pdev->dev, buf);
+		ipq4019_swmaster_tx_unmap_and_free(&eth->pdev->dev, buf);
 		memset(desc, 0, sizeof(*desc));
 		if (++index == tx_ring->count)
 			index = 0;
@@ -704,25 +716,34 @@ static void ipqess_rollback_tx(struct ipqess_master *eth,
 	tx_ring->head = start_index;
 }
 
-static void ipqess_process_dsa_tag_sh(struct ipqess_master *ess, struct sk_buff *skb,
-				      u32 *word3, u16 index)
+static void ipq4019_swmaster_process_dsa_tag_sh(struct ipq4019_swmaster *ess, struct sk_buff *skb,
+				      u32 *word3)
 {
-	*word3 |= index << IPQESS_TPD_PORT_BITMAP_SHIFT;
+	struct dsa_oob_tag_info *tag_info;
+
+	if (unlikely(!ess->dsa_ports))
+		return;
+
+	tag_info = skb_ext_find(skb, SKB_EXT_DSA_OOB);
+	if (!tag_info)
+		return;
+
+	*word3 |= tag_info->port << IPQESS_TPD_PORT_BITMAP_SHIFT;
 	*word3 |= BIT(IPQESS_TPD_FROM_CPU_SHIFT);
 	*word3 |= 0x3e << IPQESS_TPD_PORT_BITMAP_SHIFT;
 }
 
-static int ipqess_tx_map_and_fill(struct ipqess_tx_ring *tx_ring,
-				  struct sk_buff *skb, u16 index)
+static int ipq4019_swmaster_tx_map_and_fill(struct ipq4019_swmaster_tx_ring *tx_ring,
+				  struct sk_buff *skb)
 {
-	struct ipqess_tx_desc *desc = NULL, *first_desc = NULL;
+	struct ipq4019_swmaster_tx_desc *desc = NULL, *first_desc = NULL;
 	u32 word1 = 0, word3 = 0, lso_word1 = 0, svlan_tag = 0;
 	struct platform_device *pdev = tx_ring->ess->pdev;
-	struct ipqess_buf *buf = NULL;
+	struct ipq4019_swmaster_buf *buf = NULL;
 	u16 len;
 	int i;
 
-	ipqess_process_dsa_tag_sh(tx_ring->ess, skb, &word3, index);
+	ipq4019_swmaster_process_dsa_tag_sh(tx_ring->ess, skb, &word3);
 
 	if (skb_is_gso(skb)) {
 		if (skb_shinfo(skb)->gso_type & SKB_GSO_TCPV4) {
@@ -778,17 +799,17 @@ static int ipqess_tx_map_and_fill(struct ipqess_tx_ring *tx_ring,
 
 	len = skb_headlen(skb);
 
-	first_desc = ipqess_tx_desc_next(tx_ring);
+	first_desc = ipq4019_swmaster_tx_desc_next(tx_ring);
 	desc = first_desc;
 	if (lso_word1 & IPQESS_TPD_LSO_V2_EN) {
 		desc->addr = cpu_to_le32(skb->len);
 		desc->word1 = cpu_to_le32(word1 | lso_word1);
 		desc->svlan_tag = cpu_to_le16(svlan_tag);
 		desc->word3 = cpu_to_le32(word3);
-		desc = ipqess_tx_desc_next(tx_ring);
+		desc = ipq4019_swmaster_tx_desc_next(tx_ring);
 	}
 
-	buf = ipqess_get_tx_buffer(tx_ring, desc);
+	buf = ipq4019_swmaster_get_tx_buffer(tx_ring, desc);
 	buf->length = len;
 	buf->dma = dma_map_single(&pdev->dev, skb->data, len, DMA_TO_DEVICE);
 
@@ -807,8 +828,8 @@ static int ipqess_tx_map_and_fill(struct ipqess_tx_ring *tx_ring,
 		skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
 
 		len = skb_frag_size(frag);
-		desc = ipqess_tx_desc_next(tx_ring);
-		buf = ipqess_get_tx_buffer(tx_ring, desc);
+		desc = ipq4019_swmaster_tx_desc_next(tx_ring);
+		buf = ipq4019_swmaster_get_tx_buffer(tx_ring, desc);
 		buf->length = len;
 		buf->flags |= IPQESS_DESC_PAGE;
 		buf->dma = skb_frag_dma_map(&pdev->dev, frag, 0, len,
@@ -830,46 +851,47 @@ static int ipqess_tx_map_and_fill(struct ipqess_tx_ring *tx_ring,
 	return 0;
 
 dma_error:
-	ipqess_rollback_tx(tx_ring->ess, first_desc, tx_ring->ring_id);
+	ipq4019_swmaster_rollback_tx(tx_ring->ess, first_desc, tx_ring->ring_id);
 	dev_err(&pdev->dev, "TX DMA map failed\n");
 
 vlan_tag_error:
 	return -ENOMEM;
 }
 
-static void ipqess_kick_tx(struct ipqess_tx_ring *tx_ring)
+static void ipq4019_swmaster_kick_tx(struct ipq4019_swmaster_tx_ring *tx_ring)
 {
 	/* Ensure that all TPDs has been written completely */
 	dma_wmb();
 
 	/* update software producer index */
-	ipqess_w32(tx_ring->ess, IPQESS_REG_TPD_IDX_Q(tx_ring->idx),
+	ipq4019_swmaster_w32(tx_ring->ess, IPQESS_REG_TPD_IDX_Q(tx_ring->idx),
 		   tx_ring->head);
 }
 
-netdev_tx_t ipqess_master_xmit(struct sk_buff *skb, 
-		struct ipqess_master *ess, u16 index)
+netdev_tx_t ipq4019_swmaster_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
-	struct ipqess_tx_ring *tx_ring;
+	struct ipq4019_swmaster *ess = netdev_priv(netdev);
+	struct ipq4019_swmaster_tx_ring *tx_ring;
 	int avail;
 	int tx_num;
 	int ret;
 
 	tx_ring = &ess->tx_ring[skb_get_queue_mapping(skb)];
-	tx_num = ipqess_cal_txd_req(skb);
-	avail = ipqess_tx_desc_available(tx_ring);
+	tx_num = ipq4019_swmaster_cal_txd_req(skb);
+	avail = ipq4019_swmaster_tx_desc_available(tx_ring);
 	if (avail < tx_num) {
-		pr_debug("stopping tx queue %d, avail=%d req=%d im=%x\n",
+		netdev_dbg(netdev,
+			   "stopping tx queue %d, avail=%d req=%d im=%x\n",
 			   tx_ring->idx, avail, tx_num,
-			   ipqess_r32(tx_ring->ess,
+			   ipq4019_swmaster_r32(tx_ring->ess,
 				      IPQESS_REG_TX_INT_MASK_Q(tx_ring->idx)));
 		netif_tx_stop_queue(tx_ring->nq);
-		ipqess_w32(tx_ring->ess, IPQESS_REG_TX_INT_MASK_Q(tx_ring->idx), 0x1);
-		ipqess_kick_tx(tx_ring);
+		ipq4019_swmaster_w32(tx_ring->ess, IPQESS_REG_TX_INT_MASK_Q(tx_ring->idx), 0x1);
+		ipq4019_swmaster_kick_tx(tx_ring);
 		return NETDEV_TX_BUSY;
 	}
 
-	ret = ipqess_tx_map_and_fill(tx_ring, skb, index);
+	ret = ipq4019_swmaster_tx_map_and_fill(tx_ring, skb);
 	if (ret) {
 		dev_kfree_skb_any(skb);
 		ess->stats.tx_errors++;
@@ -881,41 +903,53 @@ netdev_tx_t ipqess_master_xmit(struct sk_buff *skb,
 	netdev_tx_sent_queue(tx_ring->nq, skb->len);
 
 	if (!netdev_xmit_more() || netif_xmit_stopped(tx_ring->nq))
-		ipqess_kick_tx(tx_ring);
+		ipq4019_swmaster_kick_tx(tx_ring);
 
 err_out:
 	return NETDEV_TX_OK;
 }
 
-static int ipqess_set_mac_address(struct net_device *netdev, void *p)
+static int ipq4019_swmaster_set_mac_address(struct net_device *netdev, void *p)
 {
-	struct ipqess_master *ess = netdev_priv(netdev);
+	struct ipq4019_swmaster *ess = netdev_priv(netdev);
 	const char *macaddr = netdev->dev_addr;
 	int ret = eth_mac_addr(netdev, p);
 
 	if (ret)
 		return ret;
 
-	ipqess_w32(ess, IPQESS_REG_MAC_CTRL1, (macaddr[0] << 8) | macaddr[1]);
-	ipqess_w32(ess, IPQESS_REG_MAC_CTRL0,
+	ipq4019_swmaster_w32(ess, IPQESS_REG_MAC_CTRL1, (macaddr[0] << 8) | macaddr[1]);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_MAC_CTRL0,
 		   (macaddr[2] << 24) | (macaddr[3] << 16) | (macaddr[4] << 8) |
 		    macaddr[5]);
 
 	return 0;
 }
 
-static void ipqess_tx_timeout(struct net_device *netdev, unsigned int txq_id)
+static void ipq4019_swmaster_tx_timeout(struct net_device *netdev, unsigned int txq_id)
 {
-	struct ipqess_master *ess = netdev_priv(netdev);
-	struct ipqess_tx_ring *tr = &ess->tx_ring[txq_id];
+	struct ipq4019_swmaster *ess = netdev_priv(netdev);
+	struct ipq4019_swmaster_tx_ring *tr = &ess->tx_ring[txq_id];
 
 	netdev_warn(netdev, "TX timeout on queue %d\n", tr->idx);
 }
 
-static int ipqess_netdevice_event(struct notifier_block *nb,
+static const struct net_device_ops ipq4019_swmaster_axi_netdev_ops = {
+	.ndo_init		= ipq4019_swmaster_init,
+	.ndo_uninit		= ipq4019_swmaster_uninit,
+	.ndo_open		= ipq4019_swmaster_open,
+	.ndo_stop		= ipq4019_swmaster_stop,
+	.ndo_do_ioctl		= ipq4019_swmaster_do_ioctl,
+	.ndo_start_xmit		= ipq4019_swmaster_xmit,
+	.ndo_get_stats		= ipq4019_swmaster_get_stats,
+	.ndo_set_mac_address	= ipq4019_swmaster_set_mac_address,
+	.ndo_tx_timeout		= ipq4019_swmaster_tx_timeout,
+};
+
+static int ipq4019_swmaster_netdevice_event(struct notifier_block *nb,
 				  unsigned long event, void *ptr)
 {
-	struct ipqess_master *ess = container_of(nb, struct ipqess_master, netdev_notifier);
+	struct ipq4019_swmaster *ess = container_of(nb, struct ipq4019_swmaster, netdev_notifier);
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct netdev_notifier_changeupper_info *info;
 
@@ -939,69 +973,69 @@ static int ipqess_netdevice_event(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-static void ipqess_hw_stop(struct ipqess_master *ess)
+static void ipq4019_swmaster_hw_stop(struct ipq4019_swmaster *ess)
 {
 	int i;
 
 	/* disable all RX queue IRQs */
 	for (i = 0; i < IPQESS_MAX_RX_QUEUE; i++)
-		ipqess_w32(ess, IPQESS_REG_RX_INT_MASK_Q(i), 0);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_RX_INT_MASK_Q(i), 0);
 
 	/* disable all TX queue IRQs */
 	for (i = 0; i < IPQESS_MAX_TX_QUEUE; i++)
-		ipqess_w32(ess, IPQESS_REG_TX_INT_MASK_Q(i), 0);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_TX_INT_MASK_Q(i), 0);
 
 	/* disable all other IRQs */
-	ipqess_w32(ess, IPQESS_REG_MISC_IMR, 0);
-	ipqess_w32(ess, IPQESS_REG_WOL_IMR, 0);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_MISC_IMR, 0);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_WOL_IMR, 0);
 
 	/* clear the IRQ status registers */
-	ipqess_w32(ess, IPQESS_REG_RX_ISR, 0xff);
-	ipqess_w32(ess, IPQESS_REG_TX_ISR, 0xffff);
-	ipqess_w32(ess, IPQESS_REG_MISC_ISR, 0x1fff);
-	ipqess_w32(ess, IPQESS_REG_WOL_ISR, 0x1);
-	ipqess_w32(ess, IPQESS_REG_WOL_CTRL, 0);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_RX_ISR, 0xff);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_TX_ISR, 0xffff);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_MISC_ISR, 0x1fff);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_WOL_ISR, 0x1);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_WOL_CTRL, 0);
 
 	/* disable RX and TX queues */
-	ipqess_m32(ess, IPQESS_RXQ_CTRL_EN_MASK, 0, IPQESS_REG_RXQ_CTRL);
-	ipqess_m32(ess, IPQESS_TXQ_CTRL_TXQ_EN, 0, IPQESS_REG_TXQ_CTRL);
+	ipq4019_swmaster_m32(ess, IPQESS_RXQ_CTRL_EN_MASK, 0, IPQESS_REG_RXQ_CTRL);
+	ipq4019_swmaster_m32(ess, IPQESS_TXQ_CTRL_TXQ_EN, 0, IPQESS_REG_TXQ_CTRL);
 }
 
-static int ipqess_hw_init(struct ipqess_master *ess)
+static int ipq4019_swmaster_hw_init(struct ipq4019_swmaster *ess)
 {
 	int i, err;
 	u32 tmp;
 
-	ipqess_hw_stop(ess);
+	ipq4019_swmaster_hw_stop(ess);
 
-	ipqess_m32(ess, BIT(IPQESS_INTR_SW_IDX_W_TYP_SHIFT),
+	ipq4019_swmaster_m32(ess, BIT(IPQESS_INTR_SW_IDX_W_TYP_SHIFT),
 		   IPQESS_INTR_SW_IDX_W_TYPE << IPQESS_INTR_SW_IDX_W_TYP_SHIFT,
 		   IPQESS_REG_INTR_CTRL);
 
 	/* enable IRQ delay slot */
-	ipqess_w32(ess, IPQESS_REG_IRQ_MODRT_TIMER_INIT,
+	ipq4019_swmaster_w32(ess, IPQESS_REG_IRQ_MODRT_TIMER_INIT,
 		   (IPQESS_TX_IMT << IPQESS_IRQ_MODRT_TX_TIMER_SHIFT) |
 		   (IPQESS_RX_IMT << IPQESS_IRQ_MODRT_RX_TIMER_SHIFT));
 
 	/* Set Customer and Service VLAN TPIDs */
-	ipqess_w32(ess, IPQESS_REG_VLAN_CFG,
+	ipq4019_swmaster_w32(ess, IPQESS_REG_VLAN_CFG,
 		   (ETH_P_8021Q << IPQESS_VLAN_CFG_CVLAN_TPID_SHIFT) |
 		   (ETH_P_8021AD << IPQESS_VLAN_CFG_SVLAN_TPID_SHIFT));
 
 	/* Configure the TX Queue bursting */
-	ipqess_w32(ess, IPQESS_REG_TXQ_CTRL,
+	ipq4019_swmaster_w32(ess, IPQESS_REG_TXQ_CTRL,
 		   (IPQESS_TPD_BURST << IPQESS_TXQ_NUM_TPD_BURST_SHIFT) |
 		   (IPQESS_TXF_BURST << IPQESS_TXQ_TXF_BURST_NUM_SHIFT) |
 		   IPQESS_TXQ_CTRL_TPD_BURST_EN);
 
 	/* Set RSS type */
-	ipqess_w32(ess, IPQESS_REG_RSS_TYPE,
+	ipq4019_swmaster_w32(ess, IPQESS_REG_RSS_TYPE,
 		   IPQESS_RSS_TYPE_IPV4TCP | IPQESS_RSS_TYPE_IPV6_TCP |
 		   IPQESS_RSS_TYPE_IPV4_UDP | IPQESS_RSS_TYPE_IPV6UDP |
 		   IPQESS_RSS_TYPE_IPV4 | IPQESS_RSS_TYPE_IPV6);
 
 	/* Set RFD ring burst and threshold */
-	ipqess_w32(ess, IPQESS_REG_RX_DESC1,
+	ipq4019_swmaster_w32(ess, IPQESS_REG_RX_DESC1,
 		   (IPQESS_RFD_BURST << IPQESS_RXQ_RFD_BURST_NUM_SHIFT) |
 		   (IPQESS_RFD_THR << IPQESS_RXQ_RFD_PF_THRESH_SHIFT) |
 		   (IPQESS_RFD_LTHR << IPQESS_RXQ_RFD_LOW_THRESH_SHIFT));
@@ -1009,22 +1043,22 @@ static int ipqess_hw_init(struct ipqess_master *ess)
 	/* Set Rx FIFO
 	 * - threshold to start to DMA data to host
 	 */
-	ipqess_w32(ess, IPQESS_REG_RXQ_CTRL,
+	ipq4019_swmaster_w32(ess, IPQESS_REG_RXQ_CTRL,
 		   IPQESS_FIFO_THRESH_128_BYTE | IPQESS_RXQ_CTRL_RMV_VLAN);
 
-	err = ipqess_rx_ring_alloc(ess);
+	err = ipq4019_swmaster_rx_ring_alloc(ess);
 	if (err)
 		return err;
 
-	err = ipqess_tx_ring_alloc(ess);
+	err = ipq4019_swmaster_tx_ring_alloc(ess);
 	if (err)
 		goto err_rx_ring_free;
 
 	/* Load all of ring base addresses above into the dma engine */
-	ipqess_m32(ess, 0, BIT(IPQESS_LOAD_PTR_SHIFT), IPQESS_REG_TX_SRAM_PART);
+	ipq4019_swmaster_m32(ess, 0, BIT(IPQESS_LOAD_PTR_SHIFT), IPQESS_REG_TX_SRAM_PART);
 
 	/* Disable TX FIFO low watermark and high watermark */
-	ipqess_w32(ess, IPQESS_REG_TXF_WATER_MARK, 0);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_TXF_WATER_MARK, 0);
 
 	/* Configure RSS indirection table.
 	 * 128 hash will be configured in the following
@@ -1032,42 +1066,71 @@ static int ipqess_hw_init(struct ipqess_master *ess)
 	 * and so on
 	 */
 	for (i = 0; i < IPQESS_NUM_IDT; i++)
-		ipqess_w32(ess, IPQESS_REG_RSS_IDT(i), IPQESS_RSS_IDT_VALUE);
+		ipq4019_swmaster_w32(ess, IPQESS_REG_RSS_IDT(i), IPQESS_RSS_IDT_VALUE);
 
 	/* Configure load balance mapping table.
 	 * 4 table entry will be configured according to the
 	 * following pattern: load_balance{0,1,2,3} = {Q0,Q1,Q3,Q4}
 	 * respectively.
 	 */
-	ipqess_w32(ess, IPQESS_REG_LB_RING, IPQESS_LB_REG_VALUE);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_LB_RING, IPQESS_LB_REG_VALUE);
 
 	/* Configure Virtual queue for Tx rings */
-	ipqess_w32(ess, IPQESS_REG_VQ_CTRL0, IPQESS_VQ_REG_VALUE);
-	ipqess_w32(ess, IPQESS_REG_VQ_CTRL1, IPQESS_VQ_REG_VALUE);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_VQ_CTRL0, IPQESS_VQ_REG_VALUE);
+	ipq4019_swmaster_w32(ess, IPQESS_REG_VQ_CTRL1, IPQESS_VQ_REG_VALUE);
 
 	/* Configure Max AXI Burst write size to 128 bytes*/
-	ipqess_w32(ess, IPQESS_REG_AXIW_CTRL_MAXWRSIZE,
+	ipq4019_swmaster_w32(ess, IPQESS_REG_AXIW_CTRL_MAXWRSIZE,
 		   IPQESS_AXIW_MAXWRSIZE_VALUE);
 
 	/* Enable TX queues */
-	ipqess_m32(ess, 0, IPQESS_TXQ_CTRL_TXQ_EN, IPQESS_REG_TXQ_CTRL);
+	ipq4019_swmaster_m32(ess, 0, IPQESS_TXQ_CTRL_TXQ_EN, IPQESS_REG_TXQ_CTRL);
 
 	/* Enable RX queues */
 	tmp = 0;
 	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++)
 		tmp |= IPQESS_RXQ_CTRL_EN(ess->rx_ring[i].idx);
 
-	ipqess_m32(ess, IPQESS_RXQ_CTRL_EN_MASK, tmp, IPQESS_REG_RXQ_CTRL);
+	ipq4019_swmaster_m32(ess, IPQESS_RXQ_CTRL_EN_MASK, tmp, IPQESS_REG_RXQ_CTRL);
 
 	return 0;
 
 err_rx_ring_free:
 
-	ipqess_rx_ring_free(ess);
+	ipq4019_swmaster_rx_ring_free(ess);
 	return err;
 }
 
-static void ipqess_reset(struct ipqess_master *ess)
+static void ipq4019_swmaster_mac_config(struct phylink_config *config, unsigned int mode,
+			      const struct phylink_link_state *state)
+{
+	/* Nothing to do, use fixed Internal mode */
+}
+
+static void ipq4019_swmaster_mac_link_down(struct phylink_config *config,
+				 unsigned int mode,
+				 phy_interface_t interface)
+{
+	/* Nothing to do, use fixed Internal mode */
+}
+
+static void ipq4019_swmaster_mac_link_up(struct phylink_config *config,
+			       struct phy_device *phy, unsigned int mode,
+			       phy_interface_t interface,
+			       int speed, int duplex,
+			       bool tx_pause, bool rx_pause)
+{
+	/* Nothing to do, use fixed Internal mode */
+}
+
+static struct phylink_mac_ops ipq4019_swmaster_phylink_mac_ops = {
+	.validate		= phylink_generic_validate,
+	.mac_config		= ipq4019_swmaster_mac_config,
+	.mac_link_up		= ipq4019_swmaster_mac_link_up,
+	.mac_link_down		= ipq4019_swmaster_mac_link_down,
+};
+
+static void ipq4019_swmaster_reset(struct ipq4019_swmaster *ess)
 {
 	reset_control_assert(ess->ess_rst);
 
@@ -1082,21 +1145,26 @@ static void ipqess_reset(struct ipqess_master *ess)
 	mdelay(10);
 }
 
-struct ipqess_master *ipqess_axi_probe(struct platform_device *pdev)
+struct ipq4019_swmaster *ipq4019_swmaster_axi_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
+	struct net_device *netdev;
 	phy_interface_t phy_mode;
-	struct ipqess_master *ess;
+	struct ipq4019_swmaster *ess;
 	int i, err = 0;
-	struct qca8k_priv *sw_priv;
 
-	ess = devm_kzalloc(&pdev->dev, sizeof(struct ipqess_master), GFP_KERNEL);
-	if (!ess)
+	netdev = devm_alloc_etherdev_mqs(&pdev->dev, sizeof(*ess),
+					 IPQESS_NETDEV_QUEUES,
+					 IPQESS_NETDEV_QUEUES);
+	if (!netdev)
 		return -ENOMEM;
 
+	ess = netdev_priv(netdev);
+	ess->netdev = NULL;
 	ess->pdev = pdev;
 	spin_lock_init(&ess->stats_lock);
-	platform_set_drvdata(pdev, ess);
+	SET_NETDEV_DEV(netdev, &pdev->dev);
+	platform_set_drvdata(pdev, netdev);
 
 	ess->hw_addr = devm_platform_get_and_ioremap_resource(pdev, 0, NULL);
 	if (IS_ERR(ess->hw_addr))
@@ -1116,7 +1184,23 @@ struct ipqess_master *ipqess_axi_probe(struct platform_device *pdev)
 	if (IS_ERR(ess->ess_rst))
 		goto err_clk;
 
-	ipqess_reset(ess);
+	ipq4019_swmaster_reset(ess);
+
+	ess->phylink_config.dev = &netdev->dev;
+	ess->phylink_config.type = PHYLINK_NETDEV;
+	ess->phylink_config.mac_capabilities = MAC_SYM_PAUSE | MAC_10 |
+					       MAC_100 | MAC_1000FD;
+
+	__set_bit(PHY_INTERFACE_MODE_INTERNAL,
+		  ess->phylink_config.supported_interfaces);
+
+	ess->phylink = phylink_create(&ess->phylink_config,
+				      of_fwnode_handle(np), phy_mode,
+				      &ipq4019_swmaster_phylink_mac_ops);
+	if (IS_ERR(ess->phylink)) {
+		err = PTR_ERR(ess->phylink);
+		goto err_clk;
+	}
 
 	for (i = 0; i < IPQESS_MAX_TX_QUEUE; i++) {
 		ess->tx_irq[i] = platform_get_irq(pdev, i);
@@ -1130,38 +1214,75 @@ struct ipqess_master *ipqess_axi_probe(struct platform_device *pdev)
 			  "%s:rxq%d", pdev->name, i);
 	}
 
-	//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	//err = ipqess_hw_init(ess);
+	//netdev->netdev_ops = &ipq4019_swmaster_axi_netdev_ops;
+	netdev->features = NETIF_F_HW_CSUM | NETIF_F_RXCSUM |
+			   NETIF_F_HW_VLAN_CTAG_RX |
+			   NETIF_F_HW_VLAN_CTAG_TX |
+			   NETIF_F_TSO | NETIF_F_GRO | NETIF_F_SG;
+	/* feature change is not supported yet */
+	netdev->hw_features = 0;
+	netdev->vlan_features = NETIF_F_HW_CSUM | NETIF_F_SG | NETIF_F_RXCSUM |
+				NETIF_F_TSO |
+				NETIF_F_GRO;
+	netdev->watchdog_timeo = 5 * HZ;
+	netdev->base_addr = (u32)ess->hw_addr;
+	netdev->max_mtu = 9000;
+	netdev->gso_max_segs = IPQESS_TX_RING_SIZE / 2;
+
+	err = ipq4019_swmaster_hw_init(ess);
 	if (err)
-		goto err_clk;
+		goto err_phylink;
+
+	/*
+	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
+		netif_napi_add_tx(netdev, &ess->tx_ring[i].napi_tx, ipq4019_swmaster_tx_napi);
+		netif_napi_add(netdev, &ess->rx_ring[i].napi_rx, ipq4019_swmaster_rx_napi);
+	}
+	*/
+
+	ess->netdev_notifier.notifier_call = ipq4019_swmaster_netdevice_event;
+	//err = register_netdevice_notifier(&ess->netdev_notifier);
+	if (err)
+		goto err_hw_stop;
+
+	//err = register_netdev(netdev);
+	if (err)
+		goto err_notifier_unregister;
 
 	return ess;
 
 err_notifier_unregister:
 	unregister_netdevice_notifier(&ess->netdev_notifier);
 err_hw_stop:
-	ipqess_hw_stop(ess);
+	ipq4019_swmaster_hw_stop(ess);
 
-	ipqess_tx_ring_free(ess);
-	ipqess_rx_ring_free(ess);
+	ipq4019_swmaster_tx_ring_free(ess);
+	ipq4019_swmaster_rx_ring_free(ess);
+err_phylink:
+	phylink_destroy(ess->phylink);
 
 err_clk:
 	clk_disable_unprepare(ess->ess_clk);
+	if (err) {
+		pr_err("...");
+		return NULL;
+	}
 
-	pr_err("IPQESS master initialization failed with error %d\n", err);
 	return NULL;
 }
 
-static int ipqess_axi_remove(struct ipqess_master *ess)
+static int ipq4019_swmaster_axi_remove(struct platform_device *pdev)
 {
+	const struct net_device *netdev = platform_get_drvdata(pdev);
+	struct ipq4019_swmaster *ess = netdev_priv(netdev);
 
-	ipqess_hw_stop(ess);
+	ipq4019_swmaster_hw_stop(ess);
 
-	ipqess_tx_ring_free(ess);
-	ipqess_rx_ring_free(ess);
+	ipq4019_swmaster_tx_ring_free(ess);
+	ipq4019_swmaster_rx_ring_free(ess);
 
+	phylink_destroy(ess->phylink);
 	clk_disable_unprepare(ess->ess_clk);
 
 	return 0;
 }
-

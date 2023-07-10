@@ -3,8 +3,8 @@
 #include <linux/of_platform.h>
 #include <linux/of_mdio.h>
 
-#include "ipqess_port.h"
-#include "ipqess_master.h"
+#include "ipq4019_swport.h"
+#include "ipq4019_swmaster.h"
 
 static struct regmap_config qca8k_ipq4019_regmap_config = {
 	.reg_bits = 32,
@@ -32,7 +32,7 @@ static struct qca8k_pcs *pcs_to_qca8k_pcs(struct phylink_pcs *pcs)
 	return container_of(pcs, struct qca8k_pcs, pcs);
 }
 
-static void qca8k_switch_pcs_get_state(struct phylink_pcs *pcs,
+static void ipq4019_switch_pcs_get_state(struct phylink_pcs *pcs,
 					struct phylink_link_state *state)
 {
 	struct qca8k_priv *priv = pcs_to_qca8k_pcs(pcs)->priv;
@@ -72,7 +72,7 @@ static void qca8k_switch_pcs_get_state(struct phylink_pcs *pcs,
 		state->pause |= MLO_PAUSE_TX;
 }
 
-static int qca8k_switch_pcs_config(struct phylink_pcs *pcs, unsigned int mode,
+static int ipq4019_switch_pcs_config(struct phylink_pcs *pcs, unsigned int mode,
 				    phy_interface_t interface,
 				    const unsigned long *advertising,
 				    bool permit_pause_to_mac)
@@ -80,18 +80,18 @@ static int qca8k_switch_pcs_config(struct phylink_pcs *pcs, unsigned int mode,
 	return 0;
 }
 
-static void qca8k_switch_pcs_an_restart(struct phylink_pcs *pcs)
+static void ipq4019_switch_pcs_an_restart(struct phylink_pcs *pcs)
 {
 }
 
 
 static const struct phylink_pcs_ops qca8k_pcs_ops = {
-	.pcs_get_state = qca8k_switch_pcs_get_state,
-	.pcs_config = qca8k_switch_pcs_config,
-	.pcs_an_restart = qca8k_switch_pcs_an_restart,
+	.pcs_get_state = ipq4019_switch_pcs_get_state,
+	.pcs_config = ipq4019_switch_pcs_config,
+	.pcs_an_restart = ipq4019_switch_pcs_an_restart,
 };
 
-static void qca8k_switch_setup_pcs(struct qca8k_priv *priv,
+static void ipq4019_switch_setup_pcs(struct qca8k_priv *priv,
 				    struct qca8k_pcs *qpcs,
 				    int port)
 {
@@ -103,7 +103,7 @@ static void qca8k_switch_setup_pcs(struct qca8k_priv *priv,
 	qpcs->port = port;
 }
 
-static int qca8k_switch_setup_port(struct qca8k_priv *priv, int port)
+static int ipq4019_switch_setup_port(struct qca8k_priv *priv, int port)
 {
 	int ret;
 
@@ -155,7 +155,7 @@ static int qca8k_switch_setup_port(struct qca8k_priv *priv, int port)
 	return 0;
 }
 
-static int qca8k_switch_setup(struct qca8k_priv *priv)
+static int ipq4019_switch_setup(struct qca8k_priv *priv)
 {
 	int ret,i;
 
@@ -167,7 +167,7 @@ static int qca8k_switch_setup(struct qca8k_priv *priv)
 	//!!!!!!!!!!!!!
 	//check if port 0 is the cpu port
 	
-	qca8k_switch_setup_pcs(priv, &priv->pcs_port_0, 0);
+	ipq4019_switch_setup_pcs(priv, &priv->pcs_port_0, 0);
 
 	/* Enable CPU Port */
 	ret = regmap_set_bits(priv->regmap, QCA8K_REG_GLOBAL_FW_CTRL0,
@@ -217,7 +217,7 @@ static int qca8k_switch_setup(struct qca8k_priv *priv)
 
 	/* Setup connection between CPU port & user ports */
 	for (i = 0; i < QCA8K_IPQ4019_NUM_PORTS; i++) {
-		//ret = qca8k_switch_setup_port(priv);
+		//ret = ipq4019_switch_setup_port(priv);
 		if (ret)
 			return ret;
 	}
@@ -246,17 +246,17 @@ devlink_free:
 	return ret;
 }
 
-int qca8k_switch_probe(struct platform_device *pdev)
+int ipq4019_switch_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct qca8k_priv *priv;
 	void __iomem *base, *psgmii;
 	struct device_node *np = dev->of_node, *mdio_np, *psgmii_ethphy_np;
-	struct ipqess_master *master;
+	struct ipq4019_swmaster *master;
 	int ret;
 	u32 reg = 0xcffc;
 
-	pr_info("qca8k_switch_probe\n");
+	pr_info("ipq4019_switch_probe\n");
 
 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv) {
@@ -296,10 +296,6 @@ int qca8k_switch_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-
-	qca8k_read(priv, QCA8K_REG_MODULE_EN, &reg);
-	pr_info("QCA8K_REG_MODULE_EN: %x", reg);
-
 	mdio_np = of_parse_phandle(np, "mdio", 0);
 	if (!mdio_np) {
 		dev_err(dev, "unable to get MDIO bus phandle\n");
@@ -313,8 +309,6 @@ int qca8k_switch_probe(struct platform_device *pdev)
 		dev_err(dev, "unable to find MDIO bus\n");
 		return -EPROBE_DEFER;
 	}
-	qca8k_read(priv, QCA8K_REG_MODULE_EN, &reg);
-	pr_info("QCA8K_REG_MODULE_EN: %x", reg);
 
 	psgmii_ethphy_np = of_parse_phandle(np, "psgmii-ethphy", 0);
 	if (!psgmii_ethphy_np) {
@@ -331,8 +325,6 @@ int qca8k_switch_probe(struct platform_device *pdev)
 		}
 	}
 	priv->ds = NULL;
-	qca8k_read(priv, QCA8K_REG_MODULE_EN, &reg);
-	pr_info("QCA8K_REG_MODULE_EN: %x", reg);
 
 	/* Check the detected switch id */
 	ret = qca8k_read_switch_id(priv);
@@ -344,33 +336,25 @@ int qca8k_switch_probe(struct platform_device *pdev)
 	mutex_init(&priv->reg_mutex);
 	platform_set_drvdata(pdev, priv);
 
-	master = ipqess_axi_probe(of_find_device_by_node(of_find_node_by_path("/soc/ethernet@c080000")));
-	qca8k_read(priv, QCA8K_REG_MODULE_EN, &reg);
-	pr_info("QCA8K_REG_MODULE_EN: %x", reg);
+	master = ipq4019_swmaster_axi_probe(of_find_device_by_node(of_find_node_by_path("/soc/ethernet@c080000")));
 
-	ret = ipqess_port_register(4, priv, master);
+	ret = ipq4019_swport_register(4, priv, master);
 	if (ret) {
-		pr_err("Failed to register ipqess port! error %d\n", ret);
+		pr_err("Failed to register ipq4019_swmaster port! error %d\n", ret);
 		return ret;
 	}
 
-	ret = qca8k_switch_setup(priv);
+	ret = ipq4019_switch_setup(priv);
 	if (ret) {
 		pr_err("Failed to init switch: %d!\n", ret);
 		return ret;
 	}
-	qca8k_read(priv, QCA8K_REG_MODULE_EN, &reg);
-	pr_info("QCA8K_REG_MODULE_EN: %x", reg);
-	reg = 0x0;
-	qca8k_write(priv, QCA8K_REG_MODULE_EN, reg);
-	qca8k_read(priv, QCA8K_REG_MODULE_EN, &reg);
-	pr_info("QCA8K_REG_MODULE_EN: %x", reg);
 
 	return 0;
 }
 
 static int
-qca8k_switch_remove(struct platform_device *pdev)
+ipq4019_switch_remove(struct platform_device *pdev)
 {
 	struct qca8k_priv *priv = dev_get_drvdata(&pdev->dev);
 	int i;
@@ -384,7 +368,7 @@ qca8k_switch_remove(struct platform_device *pdev)
 	platform_set_drvdata(pdev, NULL);
 
 	//!!!!!!!!!!!!!!!!
-	//ipqess_port_unregister();
+	//ipq4019_swmaster_port_unregister();
 	return 0;
 }
 
@@ -394,8 +378,8 @@ static const struct of_device_id qca8k_ipq4019_of_match[] = {
 };
 
 static struct platform_driver qca8k_ipq4019_driver = {
-	.probe = qca8k_switch_probe,
-	.remove = qca8k_switch_remove,
+	.probe = ipq4019_switch_probe,
+	.remove = ipq4019_switch_remove,
 	.driver = {
 		.name = "qca8k-ipq4019",
 		.of_match_table = qca8k_ipq4019_of_match,

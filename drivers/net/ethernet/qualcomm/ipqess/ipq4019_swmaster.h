@@ -46,7 +46,7 @@
 #define IPQESS_DESC_SINGLE 0x2
 #define IPQESS_DESC_PAGE 0x4
 
-struct ipqess_statistics {
+struct ipq4019_swmaster_statistics {
 	u32 tx_q0_pkt;
 	u32 tx_q1_pkt;
 	u32 tx_q2_pkt;
@@ -98,7 +98,7 @@ struct ipqess_statistics {
 	u32 tx_desc_error;
 };
 
-struct ipqess_tx_desc {
+struct ipq4019_swmaster_tx_desc {
 	__le16  len;
 	__le16  svlan_tag;
 	__le32  word1;
@@ -106,7 +106,7 @@ struct ipqess_tx_desc {
 	__le32  word3;
 } __aligned(16) __packed;
 
-struct ipqess_rx_desc {
+struct ipq4019_swmaster_rx_desc {
 	__le16 rrd0;
 	__le16 rrd1;
 	__le16 rrd2;
@@ -117,83 +117,81 @@ struct ipqess_rx_desc {
 	__le16 rrd7;
 } __aligned(16) __packed;
 
-struct ipqess_buf {
+struct ipq4019_swmaster_buf {
 	struct sk_buff *skb;
 	dma_addr_t dma;
 	u32 flags;
 	u16 length;
 };
 
-struct ipqess_tx_ring {
+struct ipq4019_swmaster_tx_ring {
 	struct napi_struct napi_tx;
 	u32 idx;
 	int ring_id;
-	struct ipqess_master *ess;
+	struct ipq4019_swmaster *ess;
 	struct netdev_queue *nq;
-	struct ipqess_tx_desc *hw_desc;
-	struct ipqess_buf *buf;
+	struct ipq4019_swmaster_tx_desc *hw_desc;
+	struct ipq4019_swmaster_buf *buf;
 	dma_addr_t dma;
 	u16 count;
 	u16 head;
 	u16 tail;
 };
 
-struct ipqess_rx_ring {
+struct ipq4019_swmaster_rx_ring {
 	struct napi_struct napi_rx;
 	u32 idx;
 	int ring_id;
-	struct ipqess_master *ess;
+	struct ipq4019_swmaster *ess;
 	struct device *ppdev;
-	struct ipqess_rx_desc **hw_desc;
-	struct ipqess_buf *buf;
+	struct ipq4019_swmaster_rx_desc **hw_desc;
+	struct ipq4019_swmaster_buf *buf;
 	dma_addr_t dma;
 	u16 head;
 	u16 tail;
 	atomic_t refill_count;
 };
 
-struct ipqess_rx_ring_refill {
-	struct ipqess_rx_ring *rx_ring;
+struct ipq4019_swmaster_rx_ring_refill {
+	struct ipq4019_swmaster_rx_ring *rx_ring;
 	struct work_struct refill_work;
 };
 
 #define IPQESS_IRQ_NAME_LEN	32
 
-struct ipqess_master {
-	struct net_device *netdev;//to be removed
+struct ipq4019_swmaster {
+	struct net_device *netdev;
 	void __iomem *hw_addr;
 
 	struct clk *ess_clk;
 	struct reset_control *ess_rst;
 
-	struct ipqess_rx_ring rx_ring[IPQESS_NETDEV_QUEUES];
+	struct ipq4019_swmaster_rx_ring rx_ring[IPQESS_NETDEV_QUEUES];
 
 	struct platform_device *pdev;
+	struct phylink *phylink;
+	struct phylink_config phylink_config;
 
 	struct notifier_block netdev_notifier;
 	int dsa_ports;
 
-	struct ipqess_tx_ring tx_ring[IPQESS_NETDEV_QUEUES];
+	struct ipq4019_swmaster_tx_ring tx_ring[IPQESS_NETDEV_QUEUES];
 
-	struct ipqess_statistics ipqess_stats;
+	struct ipq4019_swmaster_statistics ipq4019_swmaster_stats;
 
 	/* Protects stats */
 	spinlock_t stats_lock;
 	struct net_device_stats stats;
 
-	struct ipqess_rx_ring_refill rx_refill[IPQESS_NETDEV_QUEUES];
+	struct ipq4019_swmaster_rx_ring_refill rx_refill[IPQESS_NETDEV_QUEUES];
 	u32 tx_irq[IPQESS_MAX_TX_QUEUE];
 	char tx_irq_names[IPQESS_MAX_TX_QUEUE][IPQESS_IRQ_NAME_LEN];
 	u32 rx_irq[IPQESS_MAX_RX_QUEUE];
 	char rx_irq_names[IPQESS_MAX_TX_QUEUE][IPQESS_IRQ_NAME_LEN];
 };
 
-void ipqess_set_ethtool_ops(struct net_device *netdev);
-void ipqess_update_hw_stats(struct ipqess_master *ess);
-netdev_tx_t ipqess_master_xmit(struct sk_buff *skb,
-		struct ipqess_master *ess, u16 port_nb);
-
-struct ipqess_master *ipqess_axi_probe(struct platform_device *pdev);
+void ipq4019_swmaster_set_ethtool_ops(struct net_device *netdev);
+void ipq4019_swmaster_update_hw_stats(struct ipq4019_swmaster *ess);
 
 /* register definition */
 #define IPQESS_REG_MAS_CTRL 0x0
@@ -520,5 +518,11 @@ struct ipqess_master *ipqess_axi_probe(struct platform_device *pdev);
 #define IPQESS_RRD_PORT_TYPE_MASK 0x1F
 
 #define IPQESS_RRD_PORT_ID_MASK 0x7000
+
+struct ipq4019_swmaster *ipq4019_swmaster_axi_probe(struct platform_device *pdev);
+netdev_tx_t ipq4019_swmaster_xmit(struct sk_buff *skb, struct net_device *netdev);
+int ipq4019_swmaster_open(struct net_device *netdev);
+int ipq4019_swmaster_tx_napi(struct napi_struct *napi, int budget);
+int ipq4019_swmaster_rx_napi(struct napi_struct *napi, int budget);
 
 #endif
