@@ -656,23 +656,16 @@ struct rtnl_link_ops ipq4019_ipqess_link_ops __read_mostly = {
 	.netns_refund		= true,
 };
 
-int ipq4019_swport_register(struct device_node *port_node,
+int ipq4019_swport_register(u16 index,
 		struct qca8k_priv *sw_priv,
 		struct ipq4019_ipqess *ipqess)
 {
 	int err, i;
 	struct net_device *ndev;
+	struct device_node *port_node;
 	const char *name;
 	int assign_type;
 	struct ipq4019_swport *port;
-	u32 index;
-
-
-	err = of_property_read_u32(port_node, "reg", &index);
-	if (err) {
-		pr_err("Node without reg property!");
-		return err;
-	}
 	pr_info("ipq4019_swport_register %d\n", index);
 
 	if (index == 0) {
@@ -680,6 +673,9 @@ int ipq4019_swport_register(struct device_node *port_node,
 		//!!!!!!!!!!!!!!
 		return -1;
 	}
+
+	//to cleanup
+	port_node = of_find_node_by_path("/soc/switch@c000000/ports/port@4");
 
 	name = of_get_property(port_node, "label", NULL);
 	if (name == NULL) {
@@ -695,7 +691,7 @@ int ipq4019_swport_register(struct device_node *port_node,
 		return -ENOMEM;
 
 	port = netdev_priv(ndev);
-	port->index = (int) index;
+	port->index = index;
 	port->dn = port_node;
 	port->dev = ndev;
 	port->sw_priv = sw_priv;

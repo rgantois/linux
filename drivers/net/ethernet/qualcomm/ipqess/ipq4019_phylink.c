@@ -399,7 +399,7 @@ ipq4019_psgmii_configure(struct qca8k_priv *priv)
 }
 
 static void
-ipq4019_phylink_ipq4019_swmaster_config(struct phylink_config *config,
+ipq4019_phylink_ipq4019_ipqess_config(struct phylink_config *config,
 				 unsigned int mode,
 				 const struct phylink_link_state *state)
 {
@@ -439,13 +439,13 @@ ipq4019_phylink_ipq4019_swmaster_config(struct phylink_config *config,
 }
 
 
-static void ipq4019_phylink_ipq4019_swmaster_an_restart(struct phylink_config *config)
+static void ipq4019_phylink_ipq4019_ipqess_an_restart(struct phylink_config *config)
 {
 	return;
 }
 
 static void
-ipq4019_phylink_ipq4019_swmaster_link_down(struct phylink_config *config,
+ipq4019_phylink_ipq4019_ipqess_link_down(struct phylink_config *config,
 				    unsigned int mode,
 				    phy_interface_t interface)
 {
@@ -508,9 +508,9 @@ static const struct phylink_mac_ops ipq4019_phylink_mac_ops = {
 	.validate = phylink_generic_validate,
 	.mac_select_pcs = ipq4019_phylink_mac_select_pcs,
 	.mac_pcs_get_state = ipq4019_phylink_mac_pcs_get_state,
-	.mac_config = ipq4019_phylink_ipq4019_swmaster_config,
-	.mac_an_restart = ipq4019_phylink_ipq4019_swmaster_an_restart,
-	.mac_link_down = ipq4019_phylink_ipq4019_swmaster_link_down,
+	.mac_config = ipq4019_phylink_ipq4019_ipqess_config,
+	.mac_an_restart = ipq4019_phylink_ipq4019_ipqess_an_restart,
+	.mac_link_down = ipq4019_phylink_ipq4019_ipqess_link_down,
 	.mac_link_up = ipq4019_phylink_mac_link_up,
 };
 

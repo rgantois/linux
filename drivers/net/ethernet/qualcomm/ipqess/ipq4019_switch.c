@@ -4,7 +4,7 @@
 #include <linux/of_mdio.h>
 
 #include "ipq4019_swport.h"
-#include "ipq4019_swmaster.h"
+#include "ipq4019_ipqess.h"
 
 static struct regmap_config qca8k_ipq4019_regmap_config = {
 	.reg_bits = 32,
@@ -252,7 +252,8 @@ int ipq4019_switch_probe(struct platform_device *pdev)
 	struct qca8k_priv *priv;
 	void __iomem *base, *psgmii;
 	struct device_node *np = dev->of_node, *mdio_np, *psgmii_ethphy_np;
-	struct ipq4019_swmaster *master;
+	struct ipq4019_ipqess *ipqess;
+	struct device_node *ports, *port, *ipqess_node;
 	int ret;
 	u32 reg = 0xcffc;
 
@@ -266,6 +267,19 @@ int ipq4019_switch_probe(struct platform_device *pdev)
 
 	priv->dev = dev;
 	priv->info = &ipq4019;
+
+	ports = of_get_child_by_name(np, "ports");
+	if (!ports) {
+		//don't support "ethernet-ports" alternative
+		pr_err("No ports child node found\n");
+		return -EINVAL;
+	}
+
+	ipqess_node = of_parse_phandle(np, "ipqess-handle", 0);
+	if (!ipqess_node) {
+		pr_err("No ipqess-handle found\n");
+		return -EINVAL;
+	}
 
 	/* Start by setting up the register mapping */
 	base = devm_platform_ioremap_resource_byname(pdev, "base");
@@ -336,12 +350,17 @@ int ipq4019_switch_probe(struct platform_device *pdev)
 	mutex_init(&priv->reg_mutex);
 	platform_set_drvdata(pdev, priv);
 
-	master = ipq4019_swmaster_axi_probe(of_find_device_by_node(of_find_node_by_path("/soc/ethernet@c080000")));
+	//register ipqess (cpu port MAC) driver
+	ipqess = ipq4019_ipqess_axi_probe(ipqess_node);
 
-	ret = ipq4019_swport_register(4, priv, master);
-	if (ret) {
-		pr_err("Failed to register ipq4019_swmaster port! error %d\n", ret);
-		return ret;
+	//register switch front-facing ports
+	for_each_available_child_of_node(ports, port) {
+		ret = ipq4019_swport_register(port, priv, ipqess);
+		if (ret) {
+			pr_err("Failed to register ipq4019_ipqess port! error %d\n", ret);
+			//goto free? !!!!!!!!!!!!!!!
+			return ret;
+		}
 	}
 
 	ret = ipq4019_switch_setup(priv);
@@ -368,7 +387,7 @@ ipq4019_switch_remove(struct platform_device *pdev)
 	platform_set_drvdata(pdev, NULL);
 
 	//!!!!!!!!!!!!!!!!
-	//ipq4019_swmaster_port_unregister();
+	//ipq4019_ipqess_port_unregister();
 	return 0;
 }
 
