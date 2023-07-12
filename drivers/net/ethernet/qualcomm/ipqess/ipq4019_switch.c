@@ -27,6 +27,18 @@ static const struct qca8k_match_data ipq4019 = {
 	.mib_count = QCA8K_QCA833X_MIB_COUNT,
 };
 
+void lookup_ctrl_dump(struct qca8k_priv *priv);
+//!!!!!!!!!!!!!!!!
+void lookup_ctrl_dump(struct qca8k_priv *priv)
+{
+	int i;
+	u32 reg;
+	for (i = 0; i < QCA8K_NUM_PORTS; i++) {
+		qca8k_read(priv, QCA8K_PORT_LOOKUP_CTRL(i), &reg);
+		pr_info("QCA8K_PORT%x_LOOKUP_CTRL: %x\n", i, reg);
+	}
+}
+
 static struct qca8k_pcs *pcs_to_qca8k_pcs(struct phylink_pcs *pcs)
 {
 	return container_of(pcs, struct qca8k_pcs, pcs);
@@ -106,13 +118,19 @@ static void ipq4019_switch_setup_pcs(struct qca8k_priv *priv,
 static int ipq4019_switch_setup_port(struct qca8k_priv *priv, int port)
 {
 	int ret;
+	u32 mask = 0;
+	u32 reg;
 
 	/* CPU port gets connected to all user ports of the switch */
 	if (port == 0) {
-		//ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port),
-		//		QCA8K_PORT_LOOKUP_MEMBER, dsa_user_ports(ds));
+		//!!!!!!!!!!!!!!!!!!!
+		mask = BIT(4) | BIT(5);
+		ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port),
+				QCA8K_PORT_LOOKUP_MEMBER, mask);
 		if (ret)
 			return ret;
+		qca8k_read(priv, QCA8K_PORT_LOOKUP_CTRL(0), &reg);
+		pr_info("QCA8K_PORT0_LOOKUP_CTRL: %x\n", reg);
 
 		/* Disable CPU ARP Auto-learning by default */
 		ret = regmap_clear_bits(priv->regmap,
@@ -123,7 +141,7 @@ static int ipq4019_switch_setup_port(struct qca8k_priv *priv, int port)
 	}
 
 	/* Individual user ports get connected to CPU port only */
-	if (port > 0) {
+	if (port > 0 && (ipq4019_swport_get_netdev(port) != NULL)) {
 		ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port),
 				QCA8K_PORT_LOOKUP_MEMBER,
 				BIT(QCA8K_IPQ4019_CPU_PORT));
@@ -151,6 +169,7 @@ static int ipq4019_switch_setup_port(struct qca8k_priv *priv, int port)
 		if (ret)
 			return ret;
 	}
+	qca8k_read(priv, QCA8K_PORT_LOOKUP_CTRL(0), &reg);
 
 	return 0;
 }
@@ -211,13 +230,14 @@ static int ipq4019_switch_setup(struct qca8k_priv *priv)
 			  FIELD_PREP(QCA8K_GLOBAL_FW_CTRL1_BC_DP_MASK, BIT(QCA8K_IPQ4019_CPU_PORT)) |
 			  FIELD_PREP(QCA8K_GLOBAL_FW_CTRL1_MC_DP_MASK, BIT(QCA8K_IPQ4019_CPU_PORT)) |
 			  FIELD_PREP(QCA8K_GLOBAL_FW_CTRL1_UC_DP_MASK, BIT(QCA8K_IPQ4019_CPU_PORT)));
-	if (ret)
+	if (ret) {
 		pr_err("Error while disabling MAC and forwarding unknown frames %d\n", ret);
 		return ret;
+	}
 
 	/* Setup connection between CPU port & user ports */
 	for (i = 0; i < QCA8K_IPQ4019_NUM_PORTS; i++) {
-		//ret = ipq4019_switch_setup_port(priv);
+		ret = ipq4019_switch_setup_port(priv, i);
 		if (ret)
 			return ret;
 	}
@@ -350,12 +370,10 @@ int ipq4019_switch_probe(struct platform_device *pdev)
 	mutex_init(&priv->reg_mutex);
 	platform_set_drvdata(pdev, priv);
 
-	//register ipqess (cpu port MAC) driver
-	ipqess = ipq4019_ipqess_axi_probe(ipqess_node);
-
+	lookup_ctrl_dump(priv);
 	//register switch front-facing ports
 	for_each_available_child_of_node(ports, port) {
-		ret = ipq4019_swport_register(port, priv, ipqess);
+		ret = ipq4019_swport_register(port, priv);
 		if (ret) {
 			pr_err("Failed to register ipq4019_ipqess port! error %d\n", ret);
 			//goto free? !!!!!!!!!!!!!!!
@@ -363,11 +381,25 @@ int ipq4019_switch_probe(struct platform_device *pdev)
 		}
 	}
 
+	//register ipqess (cpu port MAC) driver
+	ipqess = ipq4019_ipqess_axi_probe(ipqess_node);
+
+	lookup_ctrl_dump(priv);
 	ret = ipq4019_switch_setup(priv);
 	if (ret) {
 		pr_err("Failed to init switch: %d!\n", ret);
 		return ret;
 	}
+	lookup_ctrl_dump(priv);
+
+	//set Port0 status
+	reg = QCA8K_PORT_STATUS_LINK_AUTO;
+	reg |= QCA8K_PORT_STATUS_DUPLEX;
+	reg |= QCA8K_PORT_STATUS_SPEED_1000;
+	reg |= QCA8K_PORT_STATUS_RXFLOW;
+	reg |= QCA8K_PORT_STATUS_TXFLOW;
+	reg |= QCA8K_PORT_STATUS_TXMAC | QCA8K_PORT_STATUS_RXMAC;
+	qca8k_write(priv, QCA8K_REG_PORT_STATUS(0), reg);
 
 	return 0;
 }

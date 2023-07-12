@@ -93,14 +93,14 @@ static int ipq4019_ipqess_tx_ring_alloc(struct ipq4019_ipqess *ess)
 	struct device *dev = &ess->pdev->dev;
 	int i;
 
-	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
+	for (i = 0; i < IPQESS_TX_QUEUES; i++) {
 		struct ipq4019_ipqess_tx_ring *tx_ring = &ess->tx_ring[i];
 		size_t size;
 		u32 idx;
 
 		tx_ring->ess = ess;
 		tx_ring->ring_id = i;
-		tx_ring->idx = i * 4;
+		tx_ring->idx = i * 2;
 		tx_ring->count = IPQESS_TX_RING_SIZE;
 		//nq is bound during swport register
 
@@ -156,7 +156,7 @@ static void ipq4019_ipqess_tx_ring_free(struct ipq4019_ipqess *ess)
 {
 	int i;
 
-	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
+	for (i = 0; i < IPQESS_TX_QUEUES; i++) {
 		int j;
 
 		if (ess->tx_ring[i].hw_desc)
@@ -185,7 +185,6 @@ static int ipq4019_ipqess_rx_buf_prepare(struct ipq4019_ipqess_buf *buf,
 		return -EFAULT;
 	}
 	struct resource *edma_res = platform_get_resource(rx_ring->ess->pdev, IORESOURCE_MEM, 0);
-	pr_info("rx_buf prepare  %d, REG_RFD_IDX_Q: %x", rx_ring->idx, edma_res->start + IPQESS_REG_RFD_IDX_Q(rx_ring->idx));
 
 	buf->length = IPQESS_RX_HEAD_BUFF_SIZE;
 	rx_ring->hw_desc[rx_ring->head] = (struct ipq4019_ipqess_rx_desc *)buf->dma;
@@ -214,7 +213,7 @@ static int ipq4019_ipqess_rx_buf_alloc(struct ipq4019_ipqess_rx_ring *rx_ring)
 {
 	struct ipq4019_ipqess_buf *buf = &rx_ring->buf[rx_ring->head];
 
-	buf->skb = netdev_alloc_skb_ip_align(rx_ring->ess->netdev,
+	buf->skb = netdev_alloc_skb_ip_align(rx_ring->ess->napi_rx_leader,
 					     IPQESS_RX_HEAD_BUFF_SIZE);
 
 	if (!buf->skb)
@@ -249,7 +248,7 @@ static int ipq4019_ipqess_rx_ring_alloc(struct ipq4019_ipqess *ess)
 {
 	int i;
 
-	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
+	for (i = 0; i < IPQESS_RX_QUEUES; i++) {
 		int j;
 
 		ess->rx_ring[i].ess = ess;
@@ -294,7 +293,7 @@ static void ipq4019_ipqess_rx_ring_free(struct ipq4019_ipqess *ess)
 {
 	int i;
 
-	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
+	for (i = 0; i < IPQESS_RX_QUEUES; i++) {
 		int j;
 
 		cancel_work_sync(&ess->rx_refill[i].refill_work);
@@ -398,8 +397,8 @@ static int ipq4019_ipqess_rx_poll(struct ipq4019_ipqess_rx_ring *rx_ring, int bu
 			skb_put(skb, length);
 		}
 
-		skb->dev = rx_ring->ess->netdev;
-		skb->protocol = eth_type_trans(skb, rx_ring->ess->netdev);
+		//skb->dev = rx_ring->ess->netdev;
+		//skb->protocol = eth_type_trans(skb, rx_ring->ess->netdev);
 		skb_record_rx_queue(skb, rx_ring->ring_id);
 
 		if (rd->rrd6 & cpu_to_le16(IPQESS_RRD_CSUM_FAIL_MASK))
@@ -414,17 +413,19 @@ static int ipq4019_ipqess_rx_poll(struct ipq4019_ipqess_rx_ring *rx_ring, int bu
 			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021AD),
 					       le16_to_cpu(rd->rrd4));
 
-		napi_gro_receive(&rx_ring->napi_rx, skb);
-
-		rx_ring->ess->stats.rx_packets++;
-		rx_ring->ess->stats.rx_bytes += length;
-
 		port_index = FIELD_GET(IPQESS_RRD_PORT_ID_MASK, le16_to_cpu(rd->rrd1));
 		if (port_index == 0) {
 			pr_warn("Received network packet targeting cpu port!");
 		} else {
+			skb_set_queue_mapping(skb, port_index);
 			//ipq4019_swport_rcv(skb, rx_ring->netdev);
 		}
+
+		//!!!!!!!!!!!!
+		//napi_gro_receive(&rx_ring->napi_rx, skb);
+
+		rx_ring->ess->stats.rx_packets++;
+		rx_ring->ess->stats.rx_bytes += length;
 
 		done++;
 skip:
@@ -472,8 +473,8 @@ static int ipq4019_ipqess_tx_complete(struct ipq4019_ipqess_tx_ring *tx_ring, in
 		   tx_ring->tail);
 
 	if (netif_tx_queue_stopped(tx_ring->nq)) {
-		netdev_dbg(tx_ring->ess->netdev, "waking up tx queue %d\n",
-			   tx_ring->idx);
+		//netdev_dbg(tx_ring->ess->netdev, "waking up tx queue %d\n",
+	//		   tx_ring->idx);
 		netif_tx_wake_queue(tx_ring->nq);
 	}
 
@@ -558,24 +559,14 @@ static irqreturn_t ipq4019_ipqess_interrupt_rx(int irq, void *priv)
 	return IRQ_HANDLED;
 }
 
-static void ipq4019_ipqess_irq_enable(struct ipq4019_ipqess *ess)
-{
-	int i;
-
-	ipq4019_ipqess_w32(ess, IPQESS_REG_RX_ISR, 0xff);
-	ipq4019_ipqess_w32(ess, IPQESS_REG_TX_ISR, 0xffff);
-	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
-		ipq4019_ipqess_w32(ess, IPQESS_REG_RX_INT_MASK_Q(ess->rx_ring[i].idx), 1);
-		ipq4019_ipqess_w32(ess, IPQESS_REG_TX_INT_MASK_Q(ess->tx_ring[i].idx), 1);
-	}
-}
-
 static void ipq4019_ipqess_irq_disable(struct ipq4019_ipqess *ess)
 {
 	int i;
 
-	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
+	for (i = 0; i < IPQESS_RX_QUEUES; i++) {
 		ipq4019_ipqess_w32(ess, IPQESS_REG_RX_INT_MASK_Q(ess->rx_ring[i].idx), 0);
+	}
+	for (i = 0; i < IPQESS_TX_QUEUES; i++) {
 		ipq4019_ipqess_w32(ess, IPQESS_REG_TX_INT_MASK_Q(ess->tx_ring[i].idx), 0);
 	}
 }
@@ -606,46 +597,57 @@ int ipq4019_ipqess_open(struct net_device *netdev)
 	int err;
 	int i = port->qid;
 	//!!!!!!!!!!!!!! boundary check
-	int qid;
-
 
 	pr_info("ipqess_open %px\n", ess);
-	qid = ess->tx_ring[i].idx;
-	err = devm_request_irq(&netdev->dev, ess->tx_irq[qid],
-				    ipq4019_ipqess_interrupt_tx, 0,
-				    ess->tx_irq_names[qid],
-				    &ess->tx_ring[i]);
-	if (err)
-		return err;
 
-	qid = ess->rx_ring[i].idx;
-	err = devm_request_irq(&netdev->dev, ess->rx_irq[qid],
-				    ipq4019_ipqess_interrupt_rx, 0,
-				    ess->rx_irq_names[qid],
-				    &ess->rx_ring[i]);
-	if (err)
-		return err;
-
+	//set TX interrupt status
+	ipq4019_ipqess_m32(ess, 0, BIT(ess->tx_ring[i].idx), IPQESS_REG_TX_ISR);
+	//enable TX interrupt
+	ipq4019_ipqess_w32(ess, IPQESS_REG_TX_INT_MASK_Q(ess->tx_ring[i].idx), 1);
 	napi_enable(&ess->tx_ring[i].napi_tx);
-	napi_enable(&ess->rx_ring[i].napi_rx);
 
-	ipq4019_ipqess_irq_enable(ess);
-	netif_tx_start_all_queues(netdev);
+	//!!!!!!!!!!!!!!
+	if (!ess->irq_enabled) {
+		for (i = 0; i < IPQESS_RX_QUEUES; i++) {
+			pr_info("enable rx irq and napi %d\n", i);
+			err = devm_request_irq(&ess->napi_rx_leader->dev, ess->rx_irq[ess->rx_ring[i].idx],
+				    	 	 ipq4019_ipqess_interrupt_rx, 0,
+				    	 	 ess->rx_irq_names[ess->rx_ring[i].idx],
+				    	 	 &ess->rx_ring[i]);
+			napi_enable(&ess->rx_ring[i].napi_rx);
+			//enable RX interrupt
+			ipq4019_ipqess_w32(ess, IPQESS_REG_RX_INT_MASK_Q(ess->rx_ring[i].idx), 1);
+		}
+		if (err)
+			return err;
+		//clear IRQ status register
+		ipq4019_ipqess_w32(ess, IPQESS_REG_RX_ISR, 0xff);
+		ess->irq_enabled = 1;
+	}
 
 	return 0;
 }
 
-static int ipq4019_ipqess_stop(struct net_device *netdev)
+int ipq4019_ipqess_stop(struct net_device *netdev)
 {
-	struct ipq4019_ipqess *ess = netdev_priv(netdev);
+	struct ipq4019_swport *port = netdev_priv(netdev);
+	struct ipq4019_ipqess *ess = port->ipqess;
 	int i;
 
+	//!!!! do something special if last netdev is closed
+	//...
+	
 	netif_tx_stop_all_queues(netdev);
-	ipq4019_ipqess_irq_disable(ess);
-	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++) {
-		napi_disable(&ess->tx_ring[i].napi_tx);
+
+	//disable TX IRQ
+	ipq4019_ipqess_w32(ess, IPQESS_REG_TX_INT_MASK_Q(ess->tx_ring[port->qid].idx), 0);
+
+	napi_disable(&ess->tx_ring[port->qid].napi_tx);
+	/*
+	for (i = 0; i < IPQESS_RX_QUEUES; i++) {
 		napi_disable(&ess->rx_ring[i].napi_rx);
 	}
+	*/
 
 	return 0;
 }
@@ -963,8 +965,8 @@ static int ipq4019_ipqess_netdevice_event(struct notifier_block *nb,
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
 	struct netdev_notifier_changeupper_info *info;
 
-	if (dev != ess->netdev)
-		return NOTIFY_DONE;
+	//if (dev != ess->netdev)
+	//	return NOTIFY_DONE;
 
 	switch (event) {
 	case NETDEV_CHANGEUPPER:
@@ -983,7 +985,7 @@ static int ipq4019_ipqess_netdevice_event(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-static void ipq4019_ipqess_hw_stop(struct ipq4019_ipqess *ess)
+void ipq4019_ipqess_hw_stop(struct ipq4019_ipqess *ess)
 {
 	int i;
 
@@ -994,6 +996,7 @@ static void ipq4019_ipqess_hw_stop(struct ipq4019_ipqess *ess)
 	/* disable all TX queue IRQs */
 	for (i = 0; i < IPQESS_MAX_TX_QUEUE; i++)
 		ipq4019_ipqess_w32(ess, IPQESS_REG_TX_INT_MASK_Q(i), 0);
+
 
 	/* disable all other IRQs */
 	ipq4019_ipqess_w32(ess, IPQESS_REG_MISC_IMR, 0);
@@ -1098,10 +1101,18 @@ static int ipq4019_ipqess_hw_init(struct ipq4019_ipqess *ess)
 
 	/* Enable RX queues */
 	tmp = 0;
-	for (i = 0; i < IPQESS_NETDEV_QUEUES; i++)
+	for (i = 0; i < IPQESS_RX_QUEUES; i++)
 		tmp |= IPQESS_RXQ_CTRL_EN(ess->rx_ring[i].idx);
 
 	ipq4019_ipqess_m32(ess, IPQESS_RXQ_CTRL_EN_MASK, tmp, IPQESS_REG_RXQ_CTRL);
+
+	/* Disable all interrupts */
+	for (i = 0; i < IPQESS_RX_QUEUES; i++)
+		ipq4019_ipqess_w32(ess, IPQESS_REG_RX_INT_MASK_Q(ess->rx_ring[i].idx), 0);
+	for (i = 0; i < IPQESS_TX_QUEUES; i++)
+		ipq4019_ipqess_w32(ess, IPQESS_REG_TX_INT_MASK_Q(ess->tx_ring[i].idx), 0);
+	ipq4019_ipqess_w32(ess, IPQESS_REG_TX_ISR, 0xffff);
+	ipq4019_ipqess_w32(ess, IPQESS_REG_RX_ISR, 0xff);
 
 	return 0;
 
@@ -1162,8 +1173,13 @@ struct ipq4019_ipqess *ipq4019_ipqess_axi_probe(struct device_node *np)
 	phy_interface_t phy_mode;
 	struct ipq4019_ipqess *ess;
 	int i, err = 0;
+	struct ipq4019_swport *port;
+	struct qca8k_priv *priv = ((struct ipq4019_swport *) netdev_priv(ipq4019_swport_get_netdev(3)))->sw_priv;
 
 	pr_info("probe ipqess\n");
+	int reg;
+	qca8k_read(priv, 0x30, &reg);
+	pr_info("ESS_MODULE_EN (fazoefaze): %x\n", reg);
 	ess = kzalloc(sizeof(struct ipq4019_ipqess), GFP_KERNEL);
 	if (!ess) {
 		//!!!!!!!!
@@ -1171,7 +1187,7 @@ struct ipq4019_ipqess *ipq4019_ipqess_axi_probe(struct device_node *np)
 		return NULL;
 	}
 
-	ess->netdev = NULL;
+	//ess->netdev = NULL;
 	ess->pdev = pdev;
 	spin_lock_init(&ess->stats_lock);
 	platform_set_drvdata(pdev, ess);
@@ -1191,7 +1207,13 @@ struct ipq4019_ipqess *ipq4019_ipqess_axi_probe(struct device_node *np)
 	if (IS_ERR(ess->ess_rst))
 		goto err_clk;
 
+	qca8k_read(priv, 0x30, &reg);
+	pr_info("ESS_MODULE_EN (tazoeeeefaze): %x\n", reg);
+
 	ipq4019_ipqess_reset(ess);
+
+	qca8k_read(priv, 0x30, &reg);
+	pr_info("ESS_MODULE_EN (zefazef): %x\n", reg);
 
 	for (i = 0; i < IPQESS_MAX_TX_QUEUE; i++) {
 		ess->tx_irq[i] = platform_get_irq(pdev, i);
@@ -1205,6 +1227,8 @@ struct ipq4019_ipqess *ipq4019_ipqess_axi_probe(struct device_node *np)
 			  "%s:rxq%d", pdev->name, i);
 	}
 
+	qca8k_read(priv, 0x30, &reg);
+	pr_info("ESS_MODULE_EN (faz): %x\n", reg);
 	/*
 	netdev->netdev_ops = &ipq4019_ipqess_axi_netdev_ops;
 	netdev->features = NETIF_F_HW_CSUM | NETIF_F_RXCSUM |
@@ -1226,8 +1250,44 @@ struct ipq4019_ipqess *ipq4019_ipqess_axi_probe(struct device_node *np)
 
 
 	err = ipq4019_ipqess_hw_init(ess);
+
+	qca8k_read(priv, 0x30, &reg);
+	pr_info("ESS_MODULE_EN (eee): %x\n", reg);
+
 	if (err)
 		goto err_phylink;
+
+	//register napi calls for tx and rx rings
+	for (i = 0; i < IPQESS_TX_QUEUES; i++) {
+		pr_info("tx queue %d\n", i);
+		netdev = ipq4019_swport_get_netdev(i);
+		if (!netdev) {
+			pr_info("No net device registered for switch port %d\n", i);
+			continue;
+		}
+		netif_napi_add_tx(netdev, &ess->tx_ring[i].napi_tx, ipq4019_ipqess_tx_napi);
+		//bind sole tx queue of port i to tx ring i of MAC driver
+		ess->tx_ring[i].nq = netdev_get_tx_queue(netdev, 0);
+
+		port = netdev_priv(netdev);
+		port->ipqess = ess;
+		err = devm_request_irq(&netdev->dev, ess->tx_irq[ess->rx_ring[i].idx],
+			 ipq4019_ipqess_interrupt_tx, 0,
+			 ess->tx_irq_names[ess->rx_ring[i].idx],
+			 &ess->tx_ring[i]);
+		if (err)
+			goto err_hw_stop;
+	}
+
+	//!!!!!!!!!!!!!
+	netdev = ipq4019_swport_get_netdev(3);
+	if (!netdev) {
+		pr_info("No net device registered for switch port 4\n");
+	}
+	for (i = 0; i < IPQESS_RX_QUEUES; i++) {
+		ess->napi_rx_leader = netdev;
+		netif_napi_add(netdev, &ess->rx_ring[i].napi_rx, ipq4019_ipqess_rx_napi);
+	}
 
 	ess->netdev_notifier.notifier_call = ipq4019_ipqess_netdevice_event;
 	//err = register_netdevice_notifier(&ess->netdev_notifier);
@@ -1238,6 +1298,10 @@ struct ipq4019_ipqess *ipq4019_ipqess_axi_probe(struct device_node *np)
 	if (err)
 		goto err_notifier_unregister;
 
+	ess->irq_enabled = 0;
+
+	qca8k_read(priv, 0x30, &reg);
+	pr_info("ESS_MODULE_EN (kkfaze): %x\n", reg);
 	return ess;
 
 err_notifier_unregister:
@@ -1273,3 +1337,4 @@ static int ipq4019_ipqess_axi_remove(struct platform_device *pdev)
 
 	return 0;
 }
+

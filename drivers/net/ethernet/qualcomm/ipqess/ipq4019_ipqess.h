@@ -10,7 +10,8 @@
 #ifndef _IPQESS_H_
 #define _IPQESS_H_
 
-#define IPQESS_NETDEV_QUEUES	5
+#define IPQESS_TX_QUEUES	5 // 1 queue per switch port
+#define IPQESS_RX_QUEUES	4 // 1 queue per CPU port
 
 #define IPQESS_TPD_EOP_SHIFT 31
 
@@ -160,13 +161,12 @@ struct ipq4019_ipqess_rx_ring_refill {
 #define IPQESS_IRQ_NAME_LEN	32
 
 struct ipq4019_ipqess {
-	struct net_device *netdev;
 	void __iomem *hw_addr;
 
 	struct clk *ess_clk;
 	struct reset_control *ess_rst;
 
-	struct ipq4019_ipqess_rx_ring rx_ring[IPQESS_NETDEV_QUEUES];
+	struct ipq4019_ipqess_rx_ring rx_ring[IPQESS_RX_QUEUES];
 
 	struct platform_device *pdev;
 	struct phylink *phylink;
@@ -175,7 +175,7 @@ struct ipq4019_ipqess {
 	struct notifier_block netdev_notifier;
 	int dsa_ports;
 
-	struct ipq4019_ipqess_tx_ring tx_ring[IPQESS_NETDEV_QUEUES];
+	struct ipq4019_ipqess_tx_ring tx_ring[IPQESS_TX_QUEUES];
 
 	struct ipq4019_ipqess_statistics ipq4019_ipqess_stats;
 
@@ -183,11 +183,15 @@ struct ipq4019_ipqess {
 	spinlock_t stats_lock;
 	struct net_device_stats stats;
 
-	struct ipq4019_ipqess_rx_ring_refill rx_refill[IPQESS_NETDEV_QUEUES];
+	struct ipq4019_ipqess_rx_ring_refill rx_refill[IPQESS_RX_QUEUES];
 	u32 tx_irq[IPQESS_MAX_TX_QUEUE];
 	char tx_irq_names[IPQESS_MAX_TX_QUEUE][IPQESS_IRQ_NAME_LEN];
 	u32 rx_irq[IPQESS_MAX_RX_QUEUE];
 	char rx_irq_names[IPQESS_MAX_TX_QUEUE][IPQESS_IRQ_NAME_LEN];
+
+	struct net_device *napi_rx_leader;
+
+	bool irq_enabled;
 };
 
 void ipq4019_ipqess_set_ethtool_ops(struct net_device *netdev);
@@ -522,7 +526,7 @@ void ipq4019_ipqess_update_hw_stats(struct ipq4019_ipqess *ess);
 struct ipq4019_ipqess *ipq4019_ipqess_axi_probe(struct device_node *np);
 netdev_tx_t ipq4019_ipqess_xmit(struct sk_buff *skb, struct net_device *netdev);
 int ipq4019_ipqess_open(struct net_device *netdev);
-int ipq4019_ipqess_tx_napi(struct napi_struct *napi, int budget);
 int ipq4019_ipqess_rx_napi(struct napi_struct *napi, int budget);
+int ipq4019_ipqess_stop(struct net_device *netdev);
 
 #endif

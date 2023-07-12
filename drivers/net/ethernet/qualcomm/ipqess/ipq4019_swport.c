@@ -13,6 +13,8 @@
 #include "ipq4019_ipqess.h"
 #include "ipq4019_phylink.h"
 
+static struct net_device *ipq4019_swport_netdevs[IPQ4019_NUM_PORTS] = {0};
+
 static struct device_type ipq4019_ipqess_type = {
 	.name	= "switch",
 };
@@ -133,7 +135,9 @@ static int ipq4019_swport_open(struct net_device *ndev)
 static int ipq4019_swport_close(struct net_device *ndev)
 {
 	struct ipq4019_swport *port = netdev_priv(ndev);
+	struct ipq4019_ipqess *ess = port->ipqess;
 
+	ipq4019_ipqess_stop(ndev);
 	ipq4019_swport_disable_rt(port);
 
 	return 0;
@@ -657,8 +661,7 @@ struct rtnl_link_ops ipq4019_ipqess_link_ops __read_mostly = {
 };
 
 int ipq4019_swport_register(struct device_node *port_node,
-		struct qca8k_priv *sw_priv,
-		struct ipq4019_ipqess *ipqess)
+		struct qca8k_priv *sw_priv)
 {
 	int err, i;
 	struct net_device *ndev;
@@ -699,7 +702,7 @@ int ipq4019_swport_register(struct device_node *port_node,
 	port->dn = port_node;
 	port->dev = ndev;
 	port->sw_priv = sw_priv;
-	port->ipqess = ipqess;
+	port->ipqess = NULL; // Assigned during ipqess initialization
 
 	of_get_mac_address(port_node, port->mac);
 	if (!is_zero_ether_addr(port->mac)) {
@@ -741,11 +744,6 @@ int ipq4019_swport_register(struct device_node *port_node,
 	}
 
 	port->qid = port->index - 1;
-	netif_napi_add_tx(ndev, &ipqess->tx_ring[port->qid].napi_tx, ipq4019_ipqess_tx_napi);
-	netif_napi_add(ndev, &ipqess->rx_ring[port->qid].napi_rx, ipq4019_ipqess_rx_napi);
-
-	//bind sole tx queue of port i to tx ring i of MAC driver
-	ipqess->tx_ring[port->qid].nq = netdev_get_tx_queue(ndev, 0);
 
 	rtnl_lock();
 
@@ -758,6 +756,8 @@ int ipq4019_swport_register(struct device_node *port_node,
 	}
 
 	rtnl_unlock();
+
+	ipq4019_swport_netdevs[port->qid] = ndev;
 
 	if (err)
 		goto out_unregister;
@@ -781,8 +781,15 @@ out_free:
 }
 
 
-int ipq4019_swport_rcv(struct sk_buff *skb, struct net_device *dev) {
+int ipq4019_swport_rcv(struct sk_buff *skb, struct net_device *dev)
+{
 	pr_info("swport rcv!\n");
 	return 0;
+}
+
+struct net_device *ipq4019_swport_get_netdev(int qid)
+{
+	pr_info("get_netdev: %d %px\n", qid, ipq4019_swport_netdevs[qid]);
+	return ipq4019_swport_netdevs[qid];
 }
 

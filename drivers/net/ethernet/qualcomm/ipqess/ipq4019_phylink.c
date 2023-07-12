@@ -265,7 +265,6 @@ qca8k_test_dsa_port_for_errors(struct qca8k_priv *priv, struct phy_device *phy,
 		/* wait for test results, collect it and cleanup */
 		qca8k_wait_for_phy_pkt_gen_fin(priv, phy);
 		res = qca8k_get_phy_pkt_gen_test_result(phy, test_pkts_num);
-		pr_info("phy pkt gen test result: %d\n", res);
 		qca8k_phy_pkt_gen_prep(priv, phy, test_pkts_num, 0);
 		qca8k_phy_broadcast_write_on_off(priv, phy, 0);
 		ipq4019_switch_port_loopback_on_off(priv, port, 0);
@@ -313,7 +312,6 @@ qca8k_do_dsa_sw_ports_self_test(struct qca8k_priv *priv, int parallel_test)
 					int result;
 					result = qca8k_test_dsa_port_for_errors(priv,
 						phy, reg, test_phase);
-					pr_info("port %s result %d\n", port->name, result);
 					if (!parallel_test && test_phase == 1)
 						qca8k_start_phy_pkt_gen(phy);
 					put_device(&phy->mdio.dev);
@@ -325,7 +323,6 @@ qca8k_do_dsa_sw_ports_self_test(struct qca8k_priv *priv, int parallel_test)
 				}
 			}
 		}
-		pr_info("End of test phase %d, test result: 0x%x\n", test_phase, tests_result);
 	}
 
 end:
@@ -348,7 +345,6 @@ psgmii_vco_calibrate_and_test(struct qca8k_priv *priv)
 			return ret;
 		/* first we run serial test */
 		test_result = qca8k_do_dsa_sw_ports_self_test(priv, 0);
-		pr_info("vco test results: %x\n", test_result);
 		/* and if it is ok then we run the test in parallel */
 		if (!test_result)
 			test_result = qca8k_do_dsa_sw_ports_self_test(priv, 1);
@@ -469,6 +465,7 @@ static void ipq4019_phylink_mac_link_up(struct phylink_config *config,
 	struct ipq4019_swport *port = container_of(config, struct ipq4019_swport, pl_config);
 	struct qca8k_priv *priv = port->sw_priv;
 	u32 reg;
+	pr_info("mac link up called!\n");
 
 	if (phylink_autoneg_inband(mode)) {
 		reg = QCA8K_PORT_STATUS_LINK_AUTO;
@@ -523,7 +520,6 @@ int ipq4019_phylink_create(struct net_device *ndev)
 	struct phylink_config *pl_config = &port->pl_config;
 	int err;
 
-	//mode
 	err = of_get_phy_mode(port->dn, &mode);
 	if (err)
 		mode = PHY_INTERFACE_MODE_NA;
@@ -562,8 +558,4 @@ int ipq4019_phylink_create(struct net_device *ndev)
 	return 0;
 }
 
-void ipq4019_phylink_full_debug(struct qca8k_priv *priv)
-{
-
-}
 
