@@ -141,7 +141,7 @@ static int ipq4019_switch_setup_port(struct qca8k_priv *priv, int port)
 	}
 
 	/* Individual user ports get connected to CPU port only */
-	if (port > 0 && (ipq4019_swport_get_netdev(port) != NULL)) {
+	if (port > 0 && (ipq4019_swport_get_netdev(port - 1) != NULL)) {
 		ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port),
 				QCA8K_PORT_LOOKUP_MEMBER,
 				BIT(QCA8K_IPQ4019_CPU_PORT));
@@ -275,6 +275,7 @@ int ipq4019_switch_probe(struct platform_device *pdev)
 	struct ipq4019_ipqess *ipqess;
 	struct device_node *ports, *port, *ipqess_node;
 	int ret;
+	int i;
 	u32 reg = 0xcffc;
 
 	pr_info("ipq4019_switch_probe\n");
@@ -370,7 +371,6 @@ int ipq4019_switch_probe(struct platform_device *pdev)
 	mutex_init(&priv->reg_mutex);
 	platform_set_drvdata(pdev, priv);
 
-	lookup_ctrl_dump(priv);
 	//register switch front-facing ports
 	for_each_available_child_of_node(ports, port) {
 		ret = ipq4019_swport_register(port, priv);
@@ -384,7 +384,14 @@ int ipq4019_switch_probe(struct platform_device *pdev)
 	//register ipqess (cpu port MAC) driver
 	ipqess = ipq4019_ipqess_axi_probe(ipqess_node);
 
-	lookup_ctrl_dump(priv);
+	//disable all user ports by default
+	for (i = 1; i < QCA8K_NUM_PORTS; i++) {
+		qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(i),
+		  QCA8K_PORT_LOOKUP_STATE_MASK, QCA8K_PORT_LOOKUP_STATE_DISABLED);
+		qca8k_port_set_status(priv, i, 0);
+		priv->port_enabled_map &= ~BIT(i);
+	}
+
 	ret = ipq4019_switch_setup(priv);
 	if (ret) {
 		pr_err("Failed to init switch: %d!\n", ret);

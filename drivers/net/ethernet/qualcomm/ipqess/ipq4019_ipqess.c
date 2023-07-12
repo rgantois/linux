@@ -320,6 +320,53 @@ static struct net_device_stats *ipq4019_ipqess_get_stats(struct net_device *netd
 	return &ess->stats;
 }
 
+static void ipq4019_redirect_to_port(struct ipq4019_ipqess_rx_ring *rx_ring, struct sk_buff *skb,
+		int port_index)
+{
+	int port_qid = port_index - 1;
+	struct ipq4019_swport *port;
+	struct net_device *netdev;
+	//!!!!!!!!!!!!
+	//chech that all of this is safe for napi softirq context
+
+	if (port_qid == -1) {
+		//!!!!!!!!!!!!!!
+		pr_warn("Received network packet targeting cpu port!");
+		return;
+	}
+	netdev = ipq4019_swport_get_netdev(port_qid);
+	if (!netdev) {
+		//!!!!!!!!!!!!
+		pr_warn("Receive network packet meant for unused port!\n");
+		return;
+	}
+	skb = skb_unshare(skb, GFP_ATOMIC);
+	if (!skb) {
+		//!!!!!!!!!!!!!
+		pr_warn("skb unshare failed\n");
+		return;
+	}
+	skb_set_queue_mapping(skb, port_qid);
+	skb->dev = netdev;
+	skb_push(skb, ETH_HLEN);
+	skb->pkt_type = PACKET_HOST;
+	skb->protocol = eth_type_trans(skb, skb->dev);
+
+	//!!!!!!!!!!!!!!!
+	//handle the upper device injection case
+	//...
+	
+	port = netdev_priv(netdev);
+	struct pcpu_sw_netstats *tstats = this_cpu_ptr(netdev->tstats);
+	//!!!!!!!!!!!!!!!
+	//handle the untag bridge pvid case?
+	//...
+
+	dev_sw_netstats_rx_add(skb->dev, skb->len + ETH_HLEN);
+
+	gro_cells_receive(&port->gcells, skb);
+}
+
 static int ipq4019_ipqess_rx_poll(struct ipq4019_ipqess_rx_ring *rx_ring, int budget)
 {
 	u32 length = 0, num_desc, tail, rx_ring_tail;
@@ -333,7 +380,6 @@ static int ipq4019_ipqess_rx_poll(struct ipq4019_ipqess_rx_ring *rx_ring, int bu
 	tail &= IPQESS_RFD_CONS_IDX_MASK;
 
 	while (done < budget) {
-		struct dsa_oob_tag_info *tag_info;
 		struct ipq4019_ipqess_rx_desc *rd;
 		struct sk_buff *skb;
 
@@ -397,8 +443,6 @@ static int ipq4019_ipqess_rx_poll(struct ipq4019_ipqess_rx_ring *rx_ring, int bu
 			skb_put(skb, length);
 		}
 
-		//skb->dev = rx_ring->ess->netdev;
-		//skb->protocol = eth_type_trans(skb, rx_ring->ess->netdev);
 		skb_record_rx_queue(skb, rx_ring->ring_id);
 
 		if (rd->rrd6 & cpu_to_le16(IPQESS_RRD_CSUM_FAIL_MASK))
@@ -413,15 +457,9 @@ static int ipq4019_ipqess_rx_poll(struct ipq4019_ipqess_rx_ring *rx_ring, int bu
 			__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021AD),
 					       le16_to_cpu(rd->rrd4));
 
-		port_index = FIELD_GET(IPQESS_RRD_PORT_ID_MASK, le16_to_cpu(rd->rrd1));
-		if (port_index == 0) {
-			pr_warn("Received network packet targeting cpu port!");
-		} else {
-			skb_set_queue_mapping(skb, port_index);
-			//ipq4019_swport_rcv(skb, rx_ring->netdev);
-		}
-
-		//!!!!!!!!!!!!
+		ipq4019_redirect_to_port(rx_ring, skb, FIELD_GET(IPQESS_RRD_PORT_ID_MASK, 
+					le16_to_cpu(rd->rrd1)));
+		//!!!!!!
 		//napi_gro_receive(&rx_ring->napi_rx, skb);
 
 		rx_ring->ess->stats.rx_packets++;
@@ -721,23 +759,6 @@ static void ipq4019_ipqess_rollback_tx(struct ipq4019_ipqess *eth,
 			index = 0;
 	}
 	tx_ring->head = start_index;
-}
-
-static void ipq4019_ipqess_process_dsa_tag_sh(struct ipq4019_ipqess *ess, struct sk_buff *skb,
-				      u32 *word3)
-{
-	struct dsa_oob_tag_info *tag_info;
-
-	if (unlikely(!ess->dsa_ports))
-		return;
-
-	tag_info = skb_ext_find(skb, SKB_EXT_DSA_OOB);
-	if (!tag_info)
-		return;
-
-	*word3 |= tag_info->port << IPQESS_TPD_PORT_BITMAP_SHIFT;
-	*word3 |= BIT(IPQESS_TPD_FROM_CPU_SHIFT);
-	*word3 |= 0x3e << IPQESS_TPD_PORT_BITMAP_SHIFT;
 }
 
 static int ipq4019_ipqess_tx_map_and_fill(struct ipq4019_ipqess_tx_ring *tx_ring,

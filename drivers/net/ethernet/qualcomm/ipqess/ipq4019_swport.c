@@ -734,11 +734,8 @@ int ipq4019_swport_register(struct device_node *port_node,
 	if (err)
 		goto out_free;
 
-	pr_info("hafazefzfejlezafj\n");
 	err = ipq4019_swport_phy_setup(ndev);
-	pr_info("azefze\n");
 	if (err) {
-		pr_info("addzefze\n");
 		pr_err("error setting up PHY: %d\n", err);
 		goto out_gcells;
 	}
@@ -789,7 +786,6 @@ int ipq4019_swport_rcv(struct sk_buff *skb, struct net_device *dev)
 
 struct net_device *ipq4019_swport_get_netdev(int qid)
 {
-	pr_info("get_netdev: %d %px\n", qid, ipq4019_swport_netdevs[qid]);
 	return ipq4019_swport_netdevs[qid];
 }
 
