@@ -6,7 +6,7 @@
 #include <net/gro_cells.h>
 #include <net/devlink.h>
 
-#include "ipq4019_ipqess.h"
+#include "ipqess_edma.h"
 
 #define IPQ4019_NUM_PORTS 5
 
@@ -17,10 +17,10 @@ struct qca8k_bridge {
 	refcount_t refcount;
 };
 
-struct ipq4019_swport {
+struct ipqess_port {
 	u16 index;
 	u16 qid;
-	struct ipq4019_ipqess *ipqess;
+	struct ipqess_edma *edma;
 	struct phylink *pl;
 	struct phylink_config pl_config;
 	struct device_node *dn;
@@ -56,10 +56,10 @@ struct ipq4019_swport {
 	struct gro_cells	gcells;
 };
 
-int ipq4019_swport_register(struct device_node *port_node,
+int ipqess_port_register(struct device_node *port_node,
 		struct qca8k_priv *sw_priv);
 
-int ipq4019_swport_rcv(struct sk_buff *skb, struct net_device *dev);
-struct net_device *ipq4019_swport_get_netdev(int qid);
+int ipqess_port_rcv(struct sk_buff *skb, struct net_device *dev);
+struct net_device *ipqess_port_get_netdev(int qid);
 
 #endif

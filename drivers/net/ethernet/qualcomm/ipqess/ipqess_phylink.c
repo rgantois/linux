@@ -4,9 +4,9 @@
 #include <linux/of_mdio.h>
 #include <linux/regmap.h>
 
-#include "ipq4019_swport.h"
+#include "ipqess_port.h"
 
-static struct phylink_pcs *ipq4019_phylink_mac_select_pcs(
+static struct phylink_pcs *ipqess_phylink_mac_select_pcs(
 		struct phylink_config *config,
 		phy_interface_t interface)
 {
@@ -14,7 +14,7 @@ static struct phylink_pcs *ipq4019_phylink_mac_select_pcs(
 }
 
 
-static void ipq4019_phylink_mac_pcs_get_state(
+static void ipqess_phylink_mac_pcs_get_state(
 		struct phylink_config *config,
 		struct phylink_link_state *state)
 {
@@ -80,7 +80,7 @@ static int psgmii_vco_calibrate(struct qca8k_priv *priv)
 }
 
 static void
-ipq4019_switch_port_loopback_on_off(struct qca8k_priv *priv, int port, int on)
+ipqess_switch_port_loopback_on_off(struct qca8k_priv *priv, int port, int on)
 {
 	u32 val = QCA8K_PORT_LOOKUP_LOOPBACK_EN;
 
@@ -258,7 +258,7 @@ qca8k_test_dsa_port_for_errors(struct qca8k_priv *priv, struct phy_device *phy,
 
 	if (test_phase == 1) { /* start test preps */
 		qca8k_phy_loopback_on_off(priv, phy, port, 1);
-		ipq4019_switch_port_loopback_on_off(priv, port, 1);
+		ipqess_switch_port_loopback_on_off(priv, port, 1);
 		qca8k_phy_broadcast_write_on_off(priv, phy, 1);
 		qca8k_phy_pkt_gen_prep(priv, phy, test_pkts_num, 1);
 	} else if (test_phase == 2) {
@@ -267,7 +267,7 @@ qca8k_test_dsa_port_for_errors(struct qca8k_priv *priv, struct phy_device *phy,
 		res = qca8k_get_phy_pkt_gen_test_result(phy, test_pkts_num);
 		qca8k_phy_pkt_gen_prep(priv, phy, test_pkts_num, 0);
 		qca8k_phy_broadcast_write_on_off(priv, phy, 0);
-		ipq4019_switch_port_loopback_on_off(priv, port, 0);
+		ipqess_switch_port_loopback_on_off(priv, port, 0);
 		qca8k_phy_loopback_on_off(priv, phy, port, 0);
 	}
 
@@ -373,7 +373,7 @@ psgmii_vco_calibrate_and_test(struct qca8k_priv *priv)
 }
 
 static int
-ipq4019_psgmii_configure(struct qca8k_priv *priv)
+ipqess_psgmii_configure(struct qca8k_priv *priv)
 {
 	int ret;
 
@@ -395,11 +395,11 @@ ipq4019_psgmii_configure(struct qca8k_priv *priv)
 }
 
 static void
-ipq4019_phylink_ipq4019_ipqess_config(struct phylink_config *config,
+ipqess_phylink_ipqess_edma_config(struct phylink_config *config,
 				 unsigned int mode,
 				 const struct phylink_link_state *state)
 {
-	struct ipq4019_swport *port = container_of(config, struct ipq4019_swport, pl_config);
+	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
 	struct qca8k_priv *priv = port->sw_priv;
 
 	switch (port->index) {
@@ -410,7 +410,7 @@ ipq4019_phylink_ipq4019_ipqess_config(struct phylink_config *config,
 	case 2:
 	case 3:
 		if (state->interface == PHY_INTERFACE_MODE_PSGMII)
-			if (ipq4019_psgmii_configure(priv))
+			if (ipqess_psgmii_configure(priv))
 				dev_err(priv->dev, "PSGMII configuration failed!\n");
 		return;
 	case 4:
@@ -425,7 +425,7 @@ ipq4019_phylink_ipq4019_ipqess_config(struct phylink_config *config,
 		}
 
 		if (state->interface == PHY_INTERFACE_MODE_PSGMII)
-			if (ipq4019_psgmii_configure(priv))
+			if (ipqess_psgmii_configure(priv))
 				dev_err(priv->dev, "PSGMII configuration failed!\n");
 		return;
 	default:
@@ -435,17 +435,17 @@ ipq4019_phylink_ipq4019_ipqess_config(struct phylink_config *config,
 }
 
 
-static void ipq4019_phylink_ipq4019_ipqess_an_restart(struct phylink_config *config)
+static void ipqess_phylink_ipqess_edma_an_restart(struct phylink_config *config)
 {
 	return;
 }
 
 static void
-ipq4019_phylink_ipq4019_ipqess_link_down(struct phylink_config *config,
+ipqess_phylink_ipqess_edma_link_down(struct phylink_config *config,
 				    unsigned int mode,
 				    phy_interface_t interface)
 {
-	struct ipq4019_swport *port = container_of(config, struct ipq4019_swport, pl_config);
+	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
 	struct qca8k_priv *priv = port->sw_priv;
 	struct phy_device *phydev = NULL;
 
@@ -455,14 +455,14 @@ ipq4019_phylink_ipq4019_ipqess_link_down(struct phylink_config *config,
 	qca8k_port_set_status(priv, port->index, 0);
 }
 
-static void ipq4019_phylink_mac_link_up(struct phylink_config *config,
+static void ipqess_phylink_mac_link_up(struct phylink_config *config,
 		struct phy_device *phydev,
 		unsigned int mode,
 		phy_interface_t interface,
 		int speed, int duplex,
 		bool tx_pause, bool rx_pause)
 {
-	struct ipq4019_swport *port = container_of(config, struct ipq4019_swport, pl_config);
+	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
 	struct qca8k_priv *priv = port->sw_priv;
 	u32 reg;
 	pr_info("mac link up called!\n");
@@ -501,20 +501,20 @@ static void ipq4019_phylink_mac_link_up(struct phylink_config *config,
 }
 
 
-static const struct phylink_mac_ops ipq4019_phylink_mac_ops = {
+static const struct phylink_mac_ops ipqess_phylink_mac_ops = {
 	.validate = phylink_generic_validate,
-	.mac_select_pcs = ipq4019_phylink_mac_select_pcs,
-	.mac_pcs_get_state = ipq4019_phylink_mac_pcs_get_state,
-	.mac_config = ipq4019_phylink_ipq4019_ipqess_config,
-	.mac_an_restart = ipq4019_phylink_ipq4019_ipqess_an_restart,
-	.mac_link_down = ipq4019_phylink_ipq4019_ipqess_link_down,
-	.mac_link_up = ipq4019_phylink_mac_link_up,
+	.mac_select_pcs = ipqess_phylink_mac_select_pcs,
+	.mac_pcs_get_state = ipqess_phylink_mac_pcs_get_state,
+	.mac_config = ipqess_phylink_ipqess_edma_config,
+	.mac_an_restart = ipqess_phylink_ipqess_edma_an_restart,
+	.mac_link_down = ipqess_phylink_ipqess_edma_link_down,
+	.mac_link_up = ipqess_phylink_mac_link_up,
 };
 
 
-int ipq4019_phylink_create(struct net_device *ndev)
+int ipqess_phylink_create(struct net_device *ndev)
 {
-	struct ipq4019_swport *port = netdev_priv(ndev);
+	struct ipqess_port *port = netdev_priv(ndev);
 	phy_interface_t mode;
 	struct phylink *pl;
 	struct phylink_config *pl_config = &port->pl_config;
@@ -549,7 +549,7 @@ int ipq4019_phylink_create(struct net_device *ndev)
 	pl_config->legacy_pre_march2020 = false;
 
 	pl = phylink_create(pl_config, of_fwnode_handle(port->dn),
-			mode, &ipq4019_phylink_mac_ops);
+			mode, &ipqess_phylink_mac_ops);
 	if (IS_ERR(pl)) {
 		return PTR_ERR(pl);
 	}

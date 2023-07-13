@@ -10,8 +10,7 @@
 #ifndef _IPQESS_H_
 #define _IPQESS_H_
 
-#define IPQESS_TX_QUEUES	5 // 1 queue per switch port
-#define IPQESS_RX_QUEUES	4 // 1 queue per CPU port
+#define IPQESS_NETDEV_QUEUES	5 // 1 queue per switch port
 
 #define IPQESS_TPD_EOP_SHIFT 31
 
@@ -47,7 +46,7 @@
 #define IPQESS_DESC_SINGLE 0x2
 #define IPQESS_DESC_PAGE 0x4
 
-struct ipq4019_ipqess_statistics {
+struct ipqess_edma_statistics {
 	u32 tx_q0_pkt;
 	u32 tx_q1_pkt;
 	u32 tx_q2_pkt;
@@ -99,7 +98,7 @@ struct ipq4019_ipqess_statistics {
 	u32 tx_desc_error;
 };
 
-struct ipq4019_ipqess_tx_desc {
+struct ipqess_edma_tx_desc {
 	__le16  len;
 	__le16  svlan_tag;
 	__le32  word1;
@@ -107,7 +106,7 @@ struct ipq4019_ipqess_tx_desc {
 	__le32  word3;
 } __aligned(16) __packed;
 
-struct ipq4019_ipqess_rx_desc {
+struct ipqess_edma_rx_desc {
 	__le16 rrd0;
 	__le16 rrd1;
 	__le16 rrd2;
@@ -118,55 +117,55 @@ struct ipq4019_ipqess_rx_desc {
 	__le16 rrd7;
 } __aligned(16) __packed;
 
-struct ipq4019_ipqess_buf {
+struct ipqess_edma_buf {
 	struct sk_buff *skb;
 	dma_addr_t dma;
 	u32 flags;
 	u16 length;
 };
 
-struct ipq4019_ipqess_tx_ring {
+struct ipqess_edma_tx_ring {
 	struct napi_struct napi_tx;
 	u32 idx;
 	int ring_id;
-	struct ipq4019_ipqess *ess;
+	struct ipqess_edma *edma;
 	struct netdev_queue *nq;
-	struct ipq4019_ipqess_tx_desc *hw_desc;
-	struct ipq4019_ipqess_buf *buf;
+	struct ipqess_edma_tx_desc *hw_desc;
+	struct ipqess_edma_buf *buf;
 	dma_addr_t dma;
 	u16 count;
 	u16 head;
 	u16 tail;
 };
 
-struct ipq4019_ipqess_rx_ring {
+struct ipqess_edma_rx_ring {
 	struct napi_struct napi_rx;
 	u32 idx;
 	int ring_id;
-	struct ipq4019_ipqess *ess;
+	struct ipqess_edma *edma;
 	struct device *ppdev;
-	struct ipq4019_ipqess_rx_desc **hw_desc;
-	struct ipq4019_ipqess_buf *buf;
+	struct ipqess_edma_rx_desc **hw_desc;
+	struct ipqess_edma_buf *buf;
 	dma_addr_t dma;
 	u16 head;
 	u16 tail;
 	atomic_t refill_count;
 };
 
-struct ipq4019_ipqess_rx_ring_refill {
-	struct ipq4019_ipqess_rx_ring *rx_ring;
+struct ipqess_edma_rx_ring_refill {
+	struct ipqess_edma_rx_ring *rx_ring;
 	struct work_struct refill_work;
 };
 
 #define IPQESS_IRQ_NAME_LEN	32
 
-struct ipq4019_ipqess {
+struct ipqess_edma {
 	void __iomem *hw_addr;
 
 	struct clk *ess_clk;
 	struct reset_control *ess_rst;
 
-	struct ipq4019_ipqess_rx_ring rx_ring[IPQESS_RX_QUEUES];
+	struct ipqess_edma_rx_ring rx_ring[IPQESS_NETDEV_QUEUES];
 
 	struct platform_device *pdev;
 	struct phylink *phylink;
@@ -175,27 +174,27 @@ struct ipq4019_ipqess {
 	struct notifier_block netdev_notifier;
 	int dsa_ports;
 
-	struct ipq4019_ipqess_tx_ring tx_ring[IPQESS_TX_QUEUES];
+	struct ipqess_edma_tx_ring tx_ring[IPQESS_NETDEV_QUEUES];
 
-	struct ipq4019_ipqess_statistics ipq4019_ipqess_stats;
+	struct ipqess_edma_statistics ipqess_edma_stats;
 
 	/* Protects stats */
 	spinlock_t stats_lock;
 	struct net_device_stats stats;
 
-	struct ipq4019_ipqess_rx_ring_refill rx_refill[IPQESS_RX_QUEUES];
+	struct ipqess_edma_rx_ring_refill rx_refill[IPQESS_NETDEV_QUEUES];
 	u32 tx_irq[IPQESS_MAX_TX_QUEUE];
 	char tx_irq_names[IPQESS_MAX_TX_QUEUE][IPQESS_IRQ_NAME_LEN];
 	u32 rx_irq[IPQESS_MAX_RX_QUEUE];
-	char rx_irq_names[IPQESS_MAX_TX_QUEUE][IPQESS_IRQ_NAME_LEN];
+	char rx_irq_names[IPQESS_MAX_RX_QUEUE][IPQESS_IRQ_NAME_LEN];
 
 	struct net_device *napi_rx_leader;
 
 	bool irq_enabled;
 };
 
-void ipq4019_ipqess_set_ethtool_ops(struct net_device *netdev);
-void ipq4019_ipqess_update_hw_stats(struct ipq4019_ipqess *ess);
+void ipqess_edma_set_ethtool_ops(struct net_device *netdev);
+void ipqess_edma_update_hw_stats(struct ipqess_edma *ess);
 
 /* register definition */
 #define IPQESS_REG_MAS_CTRL 0x0
@@ -358,7 +357,7 @@ void ipq4019_ipqess_update_hw_stats(struct ipq4019_ipqess *ess);
 #define IPQESS_LB_RING_ENTRY_BIT_OFFSET 8
 #define IPQESS_LB_RING_ID_OFFSET 0
 #define IPQESS_LB_RING_PROFILE_ID_OFFSET 3
-#define IPQESS_LB_REG_VALUE 0x6040200
+#define IPQESS_LB_REG_VALUE 0x4030403
 
 /* Load Balance Priority Mapping Register */
 #define IPQESS_REG_LB_PRI_START 0x804
@@ -376,7 +375,7 @@ void ipq4019_ipqess_update_hw_stats(struct ipq4019_ipqess *ess);
 /* RSS Indirection Register */
 #define IPQESS_REG_RSS_IDT(x) (0x840 + ((x) << 2)) /* x = No. of indirection table */
 #define IPQESS_NUM_IDT 16
-#define IPQESS_RSS_IDT_VALUE 0x64206420
+#define IPQESS_RSS_IDT_VALUE 0x4
 
 /* Default RSS Ring Register */
 #define IPQESS_REG_DEF_RSS 0x890
@@ -523,10 +522,28 @@ void ipq4019_ipqess_update_hw_stats(struct ipq4019_ipqess *ess);
 
 #define IPQESS_RRD_PORT_ID_MASK 0x7000
 
-struct ipq4019_ipqess *ipq4019_ipqess_axi_probe(struct device_node *np);
-netdev_tx_t ipq4019_ipqess_xmit(struct sk_buff *skb, struct net_device *netdev);
-int ipq4019_ipqess_open(struct net_device *netdev);
-int ipq4019_ipqess_rx_napi(struct napi_struct *napi, int budget);
-int ipq4019_ipqess_stop(struct net_device *netdev);
+struct ipqess_edma *ipqess_edma_init(struct device_node *np);
+int ipqess_edma_uninit(struct platform_device *pdev);
+netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
+int ipqess_edma_open(struct net_device *netdev);
+int ipqess_edma_stop(struct net_device *netdev);
+
+#define ESS_PORT0_QUEUE_REMAP_REG0 0xC40
+#define ESS_PORT0_QUEUE_REMAP_REG1 0xC44
+#define ESS_PORT1_QUEUE_REMAP_REG 0xC48
+#define ESS_PORT2_QUEUE_REMAP_REG 0xC4c
+#define ESS_PORT3_QUEUE_REMAP_REG 0xC50
+#define ESS_PORT4_QUEUE_REMAP_REG 0xC54
+#define ESS_PORT5_QUEUE_REMAP_REG0 0xC58
+#define ESS_PORT5_QUEUE_REMAP_REG1 0xC5c
+
+#define PORT_QUEUE0_IDX_MASK GENMASK(3, 0)
+#define PORT_QUEUE1_IDX_MASK GENMASK(11, 8)
+#define PORT_QUEUE2_IDX_MASK GENMASK(19, 16)
+#define PORT_QUEUE3_IDX_MASK GENMASK(27, 24)
+#define PORT_QUEUE0_EN_MASK BIT(7)
+#define PORT_QUEUE1_EN_MASK BIT(15)
+#define PORT_QUEUE2_EN_MASK BIT(23)
+#define PORT_QUEUE3_EN_MASK BIT(31)
 
 #endif
