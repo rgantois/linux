@@ -651,7 +651,7 @@
 			reset-names = "psgmii_rst";
 			mdio = <&mdio>;
 			psgmii-ethphy = <&psgmiiphy>;
-			ipqess-handle = <&gmac>;
+			edma-handle = <&gmac>;
 
 			status = "disabled";
 

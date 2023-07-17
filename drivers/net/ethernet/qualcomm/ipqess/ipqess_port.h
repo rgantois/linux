@@ -7,6 +7,7 @@
 #include <net/devlink.h>
 
 #include "ipqess_edma.h"
+#include "ipqess_switch.h"
 
 #define IPQ4019_NUM_PORTS 5
 
@@ -20,13 +21,14 @@ struct qca8k_bridge {
 struct ipqess_port {
 	u16 index;
 	u16 qid;
+
 	struct ipqess_edma *edma;
+	struct ipqess_switch *sw;
 	struct phylink *pl;
 	struct phylink_config pl_config;
 	struct device_node *dn;
-	struct qca8k_priv *sw_priv;
 	struct mii_bus *mii_bus;
-	struct net_device *dev;
+	struct net_device *netdev;
 	struct qca8k_bridge *bridge;
 	struct devlink_port devlink_port;
 
@@ -56,8 +58,8 @@ struct ipqess_port {
 	struct gro_cells	gcells;
 };
 
-int ipqess_port_register(struct device_node *port_node,
-		struct qca8k_priv *sw_priv);
+int ipqess_port_register(struct ipqess_switch *sw,
+		struct device_node *port_node);
 
 int ipqess_port_rcv(struct sk_buff *skb, struct net_device *dev);
 struct net_device *ipqess_port_get_netdev(int qid);

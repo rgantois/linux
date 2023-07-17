@@ -6,22 +6,6 @@
 
 #include "ipqess_port.h"
 
-static struct phylink_pcs *ipqess_phylink_mac_select_pcs(
-		struct phylink_config *config,
-		phy_interface_t interface)
-{
-	return NULL;
-}
-
-
-static void ipqess_phylink_mac_pcs_get_state(
-		struct phylink_config *config,
-		struct phylink_link_state *state)
-{
-	int err;
-	state->link = 0;
-}
-
 static int psgmii_vco_calibrate(struct qca8k_priv *priv)
 {
 	int val, ret;
@@ -400,7 +384,7 @@ ipqess_phylink_ipqess_edma_config(struct phylink_config *config,
 				 const struct phylink_link_state *state)
 {
 	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 
 	switch (port->index) {
 	case 0:
@@ -446,11 +430,11 @@ ipqess_phylink_ipqess_edma_link_down(struct phylink_config *config,
 				    phy_interface_t interface)
 {
 	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 	struct phy_device *phydev = NULL;
 
 	if (port->index > 0) {
-		phydev = port->dev->phydev;
+		phydev = port->netdev->phydev;
 	}
 	qca8k_port_set_status(priv, port->index, 0);
 }
@@ -463,7 +447,7 @@ static void ipqess_phylink_mac_link_up(struct phylink_config *config,
 		bool tx_pause, bool rx_pause)
 {
 	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 	u32 reg;
 	pr_info("mac link up called!\n");
 
@@ -503,8 +487,6 @@ static void ipqess_phylink_mac_link_up(struct phylink_config *config,
 
 static const struct phylink_mac_ops ipqess_phylink_mac_ops = {
 	.validate = phylink_generic_validate,
-	.mac_select_pcs = ipqess_phylink_mac_select_pcs,
-	.mac_pcs_get_state = ipqess_phylink_mac_pcs_get_state,
 	.mac_config = ipqess_phylink_ipqess_edma_config,
 	.mac_an_restart = ipqess_phylink_ipqess_edma_an_restart,
 	.mac_link_down = ipqess_phylink_ipqess_edma_link_down,

@@ -1,4 +1,5 @@
 #include <linux/netdevice.h>
+
 #include <linux/phylink.h>
 #include <linux/etherdevice.h>
 #include <linux/of_net.h>
@@ -15,7 +16,7 @@
 
 static struct net_device *ipqess_port_netdevs[IPQ4019_NUM_PORTS] = {0};
 
-static struct device_type ipqess_edma_type = {
+static struct device_type ipqess_port_type = {
 	.name	= "switch",
 };
 
@@ -23,7 +24,7 @@ static struct device_type ipqess_edma_type = {
 
 static void ipqess_port_fast_age(const struct ipqess_port *port)
 {
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 
 	mutex_lock(&priv->reg_mutex);
 	qca8k_fdb_access(priv, QCA8K_FDB_FLUSH_PORT, port->index);
@@ -36,7 +37,7 @@ static void ipqess_port_fast_age(const struct ipqess_port *port)
 static void ipqess_port_stp_state_set(struct ipqess_port *port,
 		u8 state)
 {
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 	u32 stp_state;
 
 	switch (state) {
@@ -65,8 +66,6 @@ static void ipqess_port_stp_state_set(struct ipqess_port *port,
 static void ipqess_port_set_state_now(struct ipqess_port *port,
 		u8 state, bool do_fast_age)
 {
-	int err;
-
 	ipqess_port_stp_state_set(port, state);
 
 	if ((port->stp_state == BR_STATE_LEARNING ||
@@ -82,7 +81,7 @@ static void ipqess_port_set_state_now(struct ipqess_port *port,
 static int ipqess_port_enable_rt(struct ipqess_port *port,
 		struct phy_device *phy)
 {
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 
 	qca8k_port_set_status(priv, port->index, 1);
 	priv->port_enabled_map |= BIT(port->index);
@@ -100,7 +99,7 @@ static int ipqess_port_enable_rt(struct ipqess_port *port,
 
 static void ipqess_port_disable_rt(struct ipqess_port *port)
 {
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 
 	if (port->pl)
 		phylink_stop(port->pl);
@@ -112,52 +111,39 @@ static void ipqess_port_disable_rt(struct ipqess_port *port)
 	priv->port_enabled_map &= ~BIT(port->index);
 }
 
-static void ipqess_port_disable(struct ipqess_port *port)
+static int ipqess_port_open(struct net_device *netdev)
 {
-	rtnl_lock();
-	ipqess_port_disable_rt(port);
-	rtnl_unlock();
-}
-
-static int ipqess_port_open(struct net_device *ndev)
-{
-	struct ipqess_port *port = netdev_priv(ndev);
-	struct phy_device *phy = ndev->phydev;
+	struct ipqess_port *port = netdev_priv(netdev);
+	struct phy_device *phy = netdev->phydev;
 	int ret;
-
-	ret = ipqess_edma_open(ndev);
 
 	ret = ipqess_port_enable_rt(port, phy);
 
 	return ret;
 }
 
-static int ipqess_port_close(struct net_device *ndev)
+static int ipqess_port_close(struct net_device *netdev)
 {
-	struct ipqess_port *port = netdev_priv(ndev);
-	struct ipqess_edma *ess = port->edma;
+	struct ipqess_port *port = netdev_priv(netdev);
 
-	ipqess_edma_stop(ndev);
 	ipqess_port_disable_rt(port);
 
 	return 0;
 }
 
-static netdev_tx_t ipqess_port_xmit(struct sk_buff *skb, struct net_device *ndev)
+static netdev_tx_t ipqess_port_xmit(struct sk_buff *skb, struct net_device *netdev)
 {
-	struct sk_buff *nskb;
-	struct ipqess_port *port = netdev_priv(ndev);
-	struct ipqess_edma *edma = port->edma;
+	struct ipqess_port *port = netdev_priv(netdev);
 
-	dev_sw_netstats_tx_add(ndev, 1, skb->len);
+	dev_sw_netstats_tx_add(netdev, 1, skb->len);
+
 
 	memset(skb->cb, 0, sizeof(skb->cb));
-	//redirect skbuff to port's tx ring
-	skb_set_queue_mapping(skb, port->qid);
-	return ipqess_edma_xmit(skb, ndev);
+
+	return ipqess_edma_xmit(skb, port->netdev);
 }
 
-static int ipqess_port_set_mac_address(struct net_device *ndev, void *a)
+static int ipqess_port_set_mac_address(struct net_device *netdev, void *a)
 {
 	struct sockaddr *addr = a;
 	int err;
@@ -168,13 +154,13 @@ static int ipqess_port_set_mac_address(struct net_device *ndev, void *a)
 	/* If the port is down, the address isn't synced yet to hardware
 	 * so there is nothing to change
 	 */
-	if (!(ndev->flags & IFF_UP)) {
-		eth_hw_addr_set(ndev, addr->sa_data);
+	if (!(netdev->flags & IFF_UP)) {
+		eth_hw_addr_set(netdev, addr->sa_data);
 		return 0;
 	}
 	
-	if (!ether_addr_equal(addr->sa_data, ndev->dev_addr)) {
-		err = dev_uc_add(ndev, addr->sa_data);
+	if (!ether_addr_equal(addr->sa_data, netdev->dev_addr)) {
+		err = dev_uc_add(netdev, addr->sa_data);
 		if (err < 0)
 			return err;
 	}
@@ -182,9 +168,9 @@ static int ipqess_port_set_mac_address(struct net_device *ndev, void *a)
 	return 0;
 }
 
-static int ipqess_port_ioctl(struct net_device *ndev, struct ifreq *ifr, int cmd)
+static int ipqess_port_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
 {
-	struct ipqess_port *port = netdev_priv(ndev);
+	struct ipqess_port *port = netdev_priv(netdev);
 	return phylink_mii_ioctl(port->pl, ifr, cmd);
 }
 
@@ -193,7 +179,7 @@ static int ipqess_port_get_iflink(const struct net_device *dev)
 	return dev->ifindex;
 }
 
-static const struct net_device_ops ipqess_edma_netdev_ops = {
+static const struct net_device_ops ipqess_port_netdev_ops = {
 	.ndo_open	 	= ipqess_port_open,
 	.ndo_stop		= ipqess_port_close,
 	.ndo_set_mac_address	= ipqess_port_set_mac_address,
@@ -219,33 +205,33 @@ static const struct net_device_ops ipqess_edma_netdev_ops = {
 
 /* netlink ops *************************************************/
 
-static int ipqess_port_phy_connect(struct net_device *ndev, int addr,
+static int ipqess_port_phy_connect(struct net_device *netdev, int addr,
 				 u32 flags)
 {
-	struct ipqess_port *port = netdev_priv(ndev);
+	struct ipqess_port *port = netdev_priv(netdev);
 
-	ndev->phydev = mdiobus_get_phy(port->mii_bus, addr);
-	if (!ndev->phydev) {
-		netdev_err(ndev, "no phy at %d\n", addr);
+	netdev->phydev = mdiobus_get_phy(port->mii_bus, addr);
+	if (!netdev->phydev) {
+		netdev_err(netdev, "no phy at %d\n", addr);
 		return -ENODEV;
 	}
 
-	ndev->phydev->dev_flags |= flags;
+	netdev->phydev->dev_flags |= flags;
 
-	return phylink_connect_phy(port->pl, ndev->phydev);
+	return phylink_connect_phy(port->pl, netdev->phydev);
 }
 
-static int ipqess_port_phy_setup(struct net_device *ndev)
+static int ipqess_port_phy_setup(struct net_device *netdev)
 {
-	struct ipqess_port *port = netdev_priv(ndev);
+	struct ipqess_port *port = netdev_priv(netdev);
 	struct device_node *port_dn = port->dn;
 	u32 phy_flags = 0;
 	int ret;
 
-	port->pl_config.dev = &ndev->dev;
+	port->pl_config.dev = &netdev->dev;
 	port->pl_config.type = PHYLINK_NETDEV;
 
-	ret = ipqess_phylink_create(ndev);
+	ret = ipqess_phylink_create(netdev);
 	if (ret) 
 		return ret;
 
@@ -254,16 +240,16 @@ static int ipqess_port_phy_setup(struct net_device *ndev)
 		/* We could not connect to a designated PHY or SFP, so try to
 		 * use the switch internal MDIO bus instead
 		 */
-		ret = ipqess_port_phy_connect(ndev, port->index, phy_flags);
+		ret = ipqess_port_phy_connect(netdev, port->index, phy_flags);
 	}
 	if (ret) {
-		netdev_err(ndev, "failed to connect to PHY: %pe\n",
+		netdev_err(netdev, "failed to connect to PHY: %pe\n",
 			   ERR_PTR(ret));
 		phylink_destroy(port->pl);
 		port->pl = NULL;
 	}
 
-	dev_info(&ndev->dev, "enabled port's phy: %s", phydev_name(ndev->phydev));
+	dev_info(&netdev->dev, "enabled port's phy: %s", phydev_name(netdev->phydev));
 	return ret;
 }
 
@@ -316,7 +302,7 @@ static void ipqess_port_get_strings(struct net_device *dev,
 				  uint32_t stringset, uint8_t *data)
 {
 	struct ipqess_port *port = netdev_priv(dev);
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 	int i;
 
 	if (stringset == ETH_SS_STATS) {
@@ -343,7 +329,7 @@ static void ipqess_port_get_ethtool_stats(struct net_device *dev,
 					uint64_t *data)
 {
 	struct ipqess_port *port = netdev_priv(dev);
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 	struct pcpu_sw_netstats *s;
 	unsigned int start;
 	const struct qca8k_mib_desc *mib;
@@ -392,7 +378,7 @@ static void ipqess_port_get_ethtool_stats(struct net_device *dev,
 static int ipqess_port_get_sset_count(struct net_device *dev, int sset)
 {
 	struct ipqess_port *port = netdev_priv(dev);
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 
 	if (sset == ETH_SS_STATS) {
 		int count = 0;
@@ -440,12 +426,6 @@ ipqess_port_get_rmon_stats(struct net_device *dev,
 	//not supported
 }
 
-static void ipqess_port_net_selftest(struct net_device *ndev,
-				   struct ethtool_test *etest, u64 *buf)
-{
-	net_selftest(ndev, etest, buf);
-}
-
 static int ipqess_port_set_wol(struct net_device *dev, struct ethtool_wolinfo *w)
 {
 	struct ipqess_port *port = netdev_priv(dev);
@@ -468,7 +448,7 @@ static int ipqess_port_set_eee(struct net_device *dev, struct ethtool_eee *eee)
 	struct ipqess_port *port = netdev_priv(dev);
 	int ret;
 	u32 lpi_en = QCA8K_REG_EEE_CTRL_LPI_EN(port->index);
-	struct qca8k_priv *priv = port->sw_priv;
+	struct qca8k_priv *priv = port->sw->priv;
 	u32 reg;
 
 	/* Port's PHY and MAC both need to be EEE capable */
@@ -498,7 +478,6 @@ static int ipqess_port_set_eee(struct net_device *dev, struct ethtool_eee *eee)
 static int ipqess_port_get_eee(struct net_device *dev, struct ethtool_eee *e)
 {
 	struct ipqess_port *port = netdev_priv(dev);
-	int ret;
 
 	/* Port's PHY and MAC both need to be EEE capable */
 	if (!dev->phydev || !port->pl)
@@ -620,27 +599,17 @@ static const struct ethtool_ops ipqess_port_ethtool_ops = {
 #define IFLA_IPQESS_UNSPEC 0
 #define IFLA_IPQESS_MAX 0
 
-static const struct nla_policy ipqess_edma_policy[IFLA_IPQESS_MAX + 1] = {
+static const struct nla_policy ipqess_port_policy[IFLA_IPQESS_MAX + 1] = {
 	[IFLA_IPQESS_MAX]	= { .type = NLA_U32 },
 };
 
-static int ipqess_edma_changelink(struct net_device *dev, struct nlattr *tb[],
-			  struct nlattr *data[],
-			  struct netlink_ext_ack *extack)
-{
-	int err;
-
-	//not supported
-	return 0;
-}
-
-static size_t ipqess_edma_get_size(const struct net_device *dev)
+static size_t ipqess_port_get_size(const struct net_device *dev)
 {
 	return nla_total_size(sizeof(u32)) +	/* IFLA_DSA_MASTER  */
 	       0;
 }
 
-static int ipqess_edma_fill_info(struct sk_buff *skb, const struct net_device *dev)
+static int ipqess_port_fill_info(struct sk_buff *skb, const struct net_device *dev)
 {
 
 	if (nla_put_u32(skb, IFLA_IPQESS_UNSPEC, dev->ifindex))
@@ -649,25 +618,26 @@ static int ipqess_edma_fill_info(struct sk_buff *skb, const struct net_device *d
 	return 0;
 }
 
-struct rtnl_link_ops ipqess_edma_link_ops __read_mostly = {
+struct rtnl_link_ops ipqess_port_link_ops __read_mostly = {
 	.kind			= "switch",
 	.priv_size		= sizeof(struct ipqess_port),
 	.maxtype		= 1,
-	.policy			= ipqess_edma_policy,
-	.changelink		= ipqess_edma_changelink,
-	.get_size		=ipqess_edma_get_size,
-	.fill_info		= ipqess_edma_fill_info,
+	.policy			= ipqess_port_policy,
+	.get_size		=ipqess_port_get_size,
+	.fill_info		= ipqess_port_fill_info,
 	.netns_refund		= true,
 };
 
-int ipqess_port_register(struct device_node *port_node,
-		struct qca8k_priv *sw_priv)
+int ipqess_port_register(struct ipqess_switch *sw,
+		struct device_node *port_node)
 {
-	int err, i;
-	struct net_device *ndev;
+	int err;
+	struct net_device *netdev;
 	const char *name;
 	int assign_type;
 	struct ipqess_port *port;
+	struct qca8k_priv *priv = sw->priv;
+	int num_queues;
 	u32 index;
 
 
@@ -692,49 +662,57 @@ int ipqess_port_register(struct device_node *port_node,
 		assign_type = NET_NAME_PREDICTABLE;
 	}
 
-	ndev = alloc_netdev_mqs(sizeof(struct ipqess_port), name, assign_type,
-			ether_setup, 1, 1);
-	if (ndev == NULL)
+	//for the NAPI leader, we allocate one queue per MAC queue
+	if (!sw->napi_leader) 
+		num_queues = IPQESS_EDMA_NETDEV_QUEUES;
+	else 
+		num_queues = 1;
+
+	netdev = alloc_netdev_mqs(sizeof(struct ipqess_port), name, assign_type,
+			ether_setup, num_queues, num_queues);
+	if (netdev == NULL)
 		return -ENOMEM;
 
-	port = netdev_priv(ndev);
+	if (!sw->napi_leader)
+			sw->napi_leader = netdev;
+
+	port = netdev_priv(netdev);
 	port->index = (int) index;
 	port->dn = port_node;
-	port->dev = ndev;
-	port->sw_priv = sw_priv;
+	port->netdev = netdev;
 	port->edma = NULL; // Assigned during edma initialization
 
 	of_get_mac_address(port_node, port->mac);
 	if (!is_zero_ether_addr(port->mac)) {
-		eth_hw_addr_set(ndev, port->mac);
+		eth_hw_addr_set(netdev, port->mac);
 	} else {
-		eth_hw_addr_random(ndev);
+		eth_hw_addr_random(netdev);
 		//set  too?
 	}
 
-	ndev->netdev_ops = &ipqess_edma_netdev_ops;
-	ndev->max_mtu = QCA8K_MAX_MTU;
-	SET_NETDEV_DEVTYPE(ndev, &ipqess_edma_type);
+	netdev->netdev_ops = &ipqess_port_netdev_ops;
+	netdev->max_mtu = QCA8K_MAX_MTU;
+	SET_NETDEV_DEVTYPE(netdev, &ipqess_port_type);
 
-	SET_NETDEV_DEV(ndev, port->sw_priv->dev);
-	//SET_NETDEV_DEVLINK_PORT(ndev, &port->devlink_port);
-	ndev->dev.of_node = port->dn;
-	//ndev->vlan_features = mac->vlan_features
+	SET_NETDEV_DEV(netdev, priv->dev);
+	//SET_NETDEV_DEVLINK_PORT(netdev, &port->devlink_port);
+	netdev->dev.of_node = port->dn;
+	//netdev->vlan_features = mac->vlan_features
 
-	ndev->rtnl_link_ops = &ipqess_edma_link_ops;
-	ndev->ethtool_ops = &ipqess_port_ethtool_ops;
+	netdev->rtnl_link_ops = &ipqess_port_link_ops;
+	netdev->ethtool_ops = &ipqess_port_ethtool_ops;
 
-	ndev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
-	if (!ndev->tstats) {
-		free_netdev(ndev);
+	netdev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
+	if (!netdev->tstats) {
+		free_netdev(netdev);
 		return -ENOMEM;
 	}
 
-	err = gro_cells_init(&port->gcells, ndev);
+	err = gro_cells_init(&port->gcells, netdev);
 	if (err)
 		goto out_free;
 
-	err = ipqess_port_phy_setup(ndev);
+	err = ipqess_port_phy_setup(netdev);
 	if (err) {
 		pr_err("error setting up PHY: %d\n", err);
 		goto out_gcells;
@@ -744,25 +722,29 @@ int ipqess_port_register(struct device_node *port_node,
 
 	rtnl_lock();
 
-	err = register_netdevice(ndev);
+	err = register_netdevice(netdev);
 	if (err) {
 		pr_err("error %d registering interface %s\n",
-		err, ndev->name);
+		err, netdev->name);
 		rtnl_unlock();
 		goto out_phy;
 	}
 
 	rtnl_unlock();
 
-	ipqess_port_netdevs[port->qid] = ndev;
+	ipqess_port_netdevs[port->qid] = netdev;
 
 	if (err)
 		goto out_unregister;
 
+	port->sw = sw;
+	//we use the qid and not the index because port 0 isn't registered
+	sw->port_list[port->qid] = port;
+
 	return 0;
 
 out_unregister:
-	unregister_netdev(ndev);
+	unregister_netdev(netdev);
 out_phy:
 	rtnl_lock();
 	phylink_disconnect_phy(port->pl);
@@ -772,8 +754,8 @@ out_phy:
 out_gcells:
 	gro_cells_destroy(&port->gcells);
 out_free:
-	free_percpu(ndev->tstats);
-	free_netdev(ndev);
+	free_percpu(netdev->tstats);
+	free_netdev(netdev);
 	return err;
 }
 
