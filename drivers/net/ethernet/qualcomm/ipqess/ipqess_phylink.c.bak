@@ -55,9 +55,9 @@ static int psgmii_vco_calibrate(struct qca8k_priv *priv)
 
 	/* Poll for PSGMIIPHY PLL calibration finish - Dakota(IPQ40xx) */
 	ret = regmap_read_poll_timeout(priv->psgmii,
-				PSGMIIPHY_VCO_CALIBRATION_CONTROL_REGISTER_2,
-				val, val & PSGMIIPHY_REG_PLL_VCO_CALIB_READY,
-				10000, 1000000);
+				       PSGMIIPHY_VCO_CALIBRATION_CONTROL_REGISTER_2,
+				       val, val & PSGMIIPHY_REG_PLL_VCO_CALIB_READY,
+				       10000, 1000000);
 	if (ret) {
 		dev_err(priv->dev, "IPQ PSGMIIPHY VCO calibration PLL not ready\n");
 		return ret;
@@ -82,7 +82,7 @@ ipqess_switch_port_loopback_on_off(struct qca8k_priv *priv, int port, int on)
 		val = 0;
 
 	qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port),
-		QCA8K_PORT_LOOKUP_LOOPBACK_EN, val);
+		  QCA8K_PORT_LOOKUP_LOOPBACK_EN, val);
 }
 
 static int
@@ -105,7 +105,7 @@ qca8k_wait_for_phy_link_state(struct phy_device *phy, int need_status)
 
 static void
 qca8k_phy_loopback_on_off(struct qca8k_priv *priv, struct phy_device *phy,
-			int sw_port, int on)
+			  int sw_port, int on)
 {
 	if (on) {
 		phy_write(phy, MII_BMCR, BMCR_ANENABLE | BMCR_RESET);
@@ -139,7 +139,7 @@ qca8k_phy_loopback_on_off(struct qca8k_priv *priv, struct phy_device *phy,
 
 static void
 qca8k_phy_pkt_gen_prep(struct qca8k_priv *priv, struct phy_device *phy,
-		int pkts_num, int on)
+		       int pkts_num, int on)
 {
 	if (on) {
 		/* enable CRC checker and packets counters */
@@ -167,8 +167,8 @@ qca8k_wait_for_phy_pkt_gen_fin(struct qca8k_priv *priv, struct phy_device *phy)
 	int val;
 	/* wait for all traffic end: 4096(pkt num)*1524(size)*8ns(125MHz)=49938us */
 	phy_read_mmd_poll_timeout(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_CTRL,
-				val, !(val & QCA8075_MMD7_PKT_GEN_INPROGR),
-				50000, 1000000, true);
+				  val, !(val & QCA8075_MMD7_PKT_GEN_INPROGR),
+				  50000, 1000000, true);
 }
 
 static void
@@ -176,7 +176,7 @@ qca8k_start_phy_pkt_gen(struct phy_device *phy)
 {
 	/* start traffic gen */
 	phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_CTRL,
-		QCA8075_MMD7_PKT_GEN_START | QCA8075_MMD7_PKT_GEN_INPROGR);
+		      QCA8075_MMD7_PKT_GEN_START | QCA8075_MMD7_PKT_GEN_INPROGR);
 }
 
 static int
@@ -229,7 +229,7 @@ qca8k_get_phy_pkt_gen_test_result(struct phy_device *phy, int pkts_num)
 
 static
 void qca8k_phy_broadcast_write_on_off(struct qca8k_priv *priv,
-				struct phy_device *phy, int on)
+				      struct phy_device *phy, int on)
 {
 	u32 val;
 
@@ -245,7 +245,7 @@ void qca8k_phy_broadcast_write_on_off(struct qca8k_priv *priv,
 
 static int
 qca8k_test_dsa_port_for_errors(struct qca8k_priv *priv, struct phy_device *phy,
-			int port, int test_phase)
+			       int port, int test_phase)
 {
 	int res = 0;
 	const int test_pkts_num = QCA8075_PKT_GEN_PKTS_COUNT;
@@ -378,7 +378,7 @@ ipqess_psgmii_configure(struct qca8k_priv *priv)
 		ret = regmap_clear_bits(priv->psgmii, PSGMIIPHY_MODE_CONTROL,
 					PSGMIIPHY_MODE_ATHR_CSCO_MODE_25M);
 		ret = regmap_write(priv->psgmii, PSGMIIPHY_TX_CONTROL,
-					PSGMIIPHY_TX_CONTROL_MAGIC_VALUE);
+				   PSGMIIPHY_TX_CONTROL_MAGIC_VALUE);
 
 		priv->psgmii_calibrated = true;
 
@@ -410,9 +410,9 @@ ipqess_phylink_ipqess_edma_config(struct phylink_config *config,
 	case 4:
 	case 5:
 		if (state->interface == PHY_INTERFACE_MODE_RGMII ||
-			state->interface == PHY_INTERFACE_MODE_RGMII_ID ||
-			state->interface == PHY_INTERFACE_MODE_RGMII_RXID ||
-			state->interface == PHY_INTERFACE_MODE_RGMII_TXID) {
+		    state->interface == PHY_INTERFACE_MODE_RGMII_ID ||
+		    state->interface == PHY_INTERFACE_MODE_RGMII_RXID ||
+		    state->interface == PHY_INTERFACE_MODE_RGMII_TXID) {
 			regmap_set_bits(priv->regmap,
 					QCA8K_IPQ4019_REG_RGMII_CTRL,
 					QCA8K_IPQ4019_RGMII_CTRL_CLK);
@@ -436,8 +436,8 @@ static void ipqess_phylink_ipqess_edma_an_restart(struct phylink_config *config)
 
 static void
 ipqess_phylink_ipqess_edma_link_down(struct phylink_config *config,
-				unsigned int mode,
-				phy_interface_t interface)
+				    unsigned int mode,
+				    phy_interface_t interface)
 {
 	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
 	struct qca8k_priv *priv = port->sw->priv;
@@ -518,20 +518,20 @@ int ipqess_phylink_create(struct net_device *netdev)
 	switch (port->index) {
 	case 0: /* CPU port */
 		__set_bit(PHY_INTERFACE_MODE_INTERNAL,
-			pl_config->supported_interfaces);
+			  pl_config->supported_interfaces);
 		break;
 
 	case 1:
 	case 2:
 	case 3:
 		__set_bit(PHY_INTERFACE_MODE_PSGMII,
-			pl_config->supported_interfaces);
+			  pl_config->supported_interfaces);
 		break;
 	case 4:
 	case 5:
 		phy_interface_set_rgmii(pl_config->supported_interfaces);
 		__set_bit(PHY_INTERFACE_MODE_PSGMII,
-			pl_config->supported_interfaces);
+			  pl_config->supported_interfaces);
 		break;
 	}
 	//phylink caps

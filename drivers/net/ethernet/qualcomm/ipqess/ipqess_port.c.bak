@@ -89,7 +89,7 @@ static void ipqess_port_stp_state_set(struct ipqess_port *port,
 	}
 
 	qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port->index),
-		QCA8K_PORT_LOOKUP_STATE_MASK, stp_state);
+		  QCA8K_PORT_LOOKUP_STATE_MASK, stp_state);
 }
 
 static void ipqess_port_set_state_now(struct ipqess_port *port,
@@ -98,10 +98,10 @@ static void ipqess_port_set_state_now(struct ipqess_port *port,
 	ipqess_port_stp_state_set(port, state);
 
 	if ((port->stp_state == BR_STATE_LEARNING ||
-		port->stp_state == BR_STATE_FORWARDING) &&
+		  port->stp_state == BR_STATE_FORWARDING) &&
 		 (state == BR_STATE_DISABLED ||
-		state == BR_STATE_BLOCKING ||
-		state == BR_STATE_LISTENING))
+		  state == BR_STATE_BLOCKING ||
+		  state == BR_STATE_LISTENING))
 		ipqess_port_fast_age(port);
 
 	port->stp_state = state;
@@ -260,8 +260,8 @@ static int ipqess_port_vlan_add(struct qca8k_priv *priv, int port_index,
 			return ret;
 
 		ret = qca8k_write(priv, QCA8K_REG_PORT_VLAN_CTRL0(port_index),
-				QCA8K_PORT_VLAN_CVID(vlan->vid) |
-				QCA8K_PORT_VLAN_SVID(vlan->vid));
+				  QCA8K_PORT_VLAN_CVID(vlan->vid) |
+				  QCA8K_PORT_VLAN_SVID(vlan->vid));
 	}
 
 	return ret;
@@ -280,7 +280,7 @@ static int ipqess_port_vlan_del(struct qca8k_priv *priv, int port_index,
 }
 
 static int ipqess_port_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
-				u16 vid)
+				     u16 vid)
 {
 	struct ipqess_port *port = netdev_priv(dev);
 	struct switchdev_obj_port_vlan vlan = {
@@ -305,7 +305,7 @@ static int ipqess_port_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
 	if (ret) {
 		if (extack._msg)
 			netdev_err(dev, "CPU port %d: %s\n", 0,
-				extack._msg);
+				   extack._msg);
 		return ret;
 	}
 
@@ -313,7 +313,7 @@ static int ipqess_port_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
 }
 
 static int ipqess_port_vlan_rx_kill_vid(struct net_device *dev, __be16 proto,
-				u16 vid)
+				      u16 vid)
 {
 	struct ipqess_port *port = netdev_priv(dev);
 	struct switchdev_obj_port_vlan vlan = {
@@ -336,7 +336,7 @@ static int ipqess_port_vlan_rx_kill_vid(struct net_device *dev, __be16 proto,
 
 static int
 ipqess_port_fdb_do_dump(const unsigned char *addr, u16 vid,
-			bool is_static, void *data)
+			   bool is_static, void *data)
 {
 	struct ipqess_port_dump_ctx *dump = data;
 	u32 portid = NETLINK_CB(dump->cb->skb).portid;
@@ -380,8 +380,8 @@ nla_put_failure:
 
 static int
 ipqess_port_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb,
-		struct net_device *dev, struct net_device *filter_dev,
-		int *idx)
+		   struct net_device *dev, struct net_device *filter_dev,
+		   int *idx)
 {
 	struct ipqess_port *port = netdev_priv(dev);
 	struct qca8k_priv *priv = port->sw->priv;
@@ -414,7 +414,7 @@ ipqess_port_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb,
 
 #ifdef CONFIG_NET_POLL_CONTROLLER
 static int ipqess_port_netpoll_setup(struct net_device *netdev,
-				struct netpoll_info *ni)
+				   struct netpoll_info *ni)
 {
 	struct ipqess_port *port = netdev_priv(netdev);
 	struct net_device *napi_leader = port->sw->napi_leader;
@@ -494,8 +494,8 @@ static int ipqess_port_bridge_alloc(struct ipqess_port *port, struct net_device 
 
 /* Must be called under rcu_read_lock() */
 static bool ipqess_port_can_apply_vlan_filtering(struct ipqess_port *port,
-					bool vlan_filtering,
-					struct netlink_ext_ack *extack)
+					      bool vlan_filtering,
+					      struct netlink_ext_ack *extack)
 {
 	int err;
 
@@ -525,7 +525,7 @@ static bool ipqess_port_can_apply_vlan_filtering(struct ipqess_port *port,
 			err = br_vlan_get_info(br, vid, &br_info);
 			if (err == 0) {
 				NL_SET_ERR_MSG_MOD(extack,
-						"Must first remove VLAN uppers having VIDs also present in bridge");
+						   "Must first remove VLAN uppers having VIDs also present in bridge");
 				return false;
 			}
 		}
@@ -550,7 +550,7 @@ static int ipqess_port_clear_vlan(struct net_device *vdev, int vid, void *arg)
 }
 
 static int ipqess_port_manage_vlan_filtering(struct net_device *netdev,
-				bool vlan_filtering)
+				    bool vlan_filtering)
 {
 	int err;
 
@@ -593,7 +593,7 @@ static int ipqess_write_vlan_filtering(struct qca8k_priv *priv, int port_index,
 }
 
 static int ipqess_port_vlan_filtering(struct ipqess_port *port, bool vlan_filtering,
-			struct netlink_ext_ack *extack)
+			    struct netlink_ext_ack *extack)
 {
 	bool old_vlan_filtering = port->vlan_filtering;
 	bool apply;
@@ -621,7 +621,7 @@ static int ipqess_port_vlan_filtering(struct ipqess_port *port, bool vlan_filter
 	port->vlan_filtering = vlan_filtering;
 
 	err = ipqess_port_manage_vlan_filtering(port->netdev,
-						vlan_filtering);
+						   vlan_filtering);
 	if (err)
 		goto restore;
 
@@ -636,7 +636,7 @@ restore:
 }
 
 static void ipqess_port_reset_vlan_filtering(struct ipqess_port *port,
-					struct ipqess_bridge *bridge)
+					  struct ipqess_bridge *bridge)
 {
 	struct netlink_ext_ack extack = {0};
 	bool change_vlan_filtering = false;
@@ -659,7 +659,7 @@ static void ipqess_port_reset_vlan_filtering(struct ipqess_port *port,
 	if (err && err != -EOPNOTSUPP) {
 		dev_err(&port->netdev->dev,
 			"port %d failed to reset VLAN filtering to %d: %pe\n",
-			port->index, vlan_filtering, ERR_PTR(err));
+		       port->index, vlan_filtering, ERR_PTR(err));
 	}
 }
 
@@ -700,7 +700,7 @@ static int ipqess_port_switchdev_sync_attrs(struct ipqess_port *port,
 }
 
 static void ipqess_port_switchdev_unsync_attrs(struct ipqess_port *port,
-					struct ipqess_bridge *bridge)
+					    struct ipqess_bridge *bridge)
 {
 	/* Configure the port for standalone mode (no address learning,
 	 * flood everything).
@@ -727,7 +727,7 @@ static void ipqess_port_switchdev_unsync_attrs(struct ipqess_port *port,
 }
 
 static inline bool ipqess_port_offloads_bridge(struct ipqess_port *port,
-					const struct ipqess_bridge *bridge)
+					    const struct ipqess_bridge *bridge)
 {
 	return ipqess_port_bridge_dev_get(port) == bridge->netdev;
 }
@@ -740,7 +740,7 @@ static inline bool ipqess_port_offloads_bridge_port(struct ipqess_port *port,
 
 static inline bool
 ipqess_port_offloads_bridge_dev(struct ipqess_port *port,
-			const struct net_device *bridge_dev)
+			     const struct net_device *bridge_dev)
 {
 	/* QCA8K ports connected to a bridge, and event was emitted
 	 * for the bridge.
@@ -749,7 +749,7 @@ ipqess_port_offloads_bridge_dev(struct ipqess_port *port,
 }
 
 static void ipqess_port_bridge_destroy(struct ipqess_port *port,
-				const struct net_device *br)
+				    const struct net_device *br)
 {
 	struct ipqess_bridge *bridge = port->bridge;
 
@@ -804,8 +804,8 @@ int ipqess_port_bridge_join(struct ipqess_port *port, struct net_device *br,
 		 * in the bridge
 		 */
 		err = regmap_set_bits(priv->regmap,
-				QCA8K_PORT_LOOKUP_CTRL(i),
-				BIT(port_id));
+				      QCA8K_PORT_LOOKUP_CTRL(i),
+				      BIT(port_id));
 		if (err)
 			goto out_rollback;
 		if (i != port_id)
@@ -847,15 +847,15 @@ out_rollback_unbridge:
 		 * in the bridge
 		 */
 		regmap_clear_bits(priv->regmap,
-				QCA8K_PORT_LOOKUP_CTRL(i),
-				BIT(port_id));
+				  QCA8K_PORT_LOOKUP_CTRL(i),
+				  BIT(port_id));
 	}
 
 	/* Set the cpu port to be the only one in the portvlan mask of
 	 * this port
 	 */
 	qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port_id),
-		QCA8K_PORT_LOOKUP_MEMBER, BIT(0));
+		  QCA8K_PORT_LOOKUP_MEMBER, BIT(0));
 out_rollback:
 	ipqess_port_bridge_destroy(port, br);
 	dev_err(&port->netdev->dev, "Failed to join bridge: errno %d\n", err);
@@ -890,15 +890,15 @@ void ipqess_port_bridge_leave(struct ipqess_port *port, struct net_device *br)
 		 * in the bridge
 		 */
 		regmap_clear_bits(priv->regmap,
-				QCA8K_PORT_LOOKUP_CTRL(i),
-				BIT(port_id));
+				  QCA8K_PORT_LOOKUP_CTRL(i),
+				  BIT(port_id));
 	}
 
 	/* Set the cpu port to be the only one in the portvlan mask of
 	 * this port
 	 */
 	qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port_id),
-		QCA8K_PORT_LOOKUP_MEMBER, BIT(0));
+		  QCA8K_PORT_LOOKUP_MEMBER, BIT(0));
 
 	ipqess_port_switchdev_unsync_attrs(port, port->bridge);
 }
@@ -912,15 +912,15 @@ static int ipqess_port_mst_enable(struct ipqess_port *port, bool on,
 }
 
 static int ipqess_port_set_mst_state(struct ipqess_port *dp,
-			const struct switchdev_mst_state *state,
-			struct netlink_ext_ack *extack)
+			   const struct switchdev_mst_state *state,
+			   struct netlink_ext_ack *extack)
 {
 	return -EOPNOTSUPP;
 }
 
 int ipqess_port_attr_set(struct net_device *dev, const void *ctx,
-				const struct switchdev_attr *attr,
-				struct netlink_ext_ack *extack)
+				   const struct switchdev_attr *attr,
+				   struct netlink_ext_ack *extack)
 {
 	struct ipqess_port *port = netdev_priv(dev);
 	int ret;
@@ -940,7 +940,7 @@ int ipqess_port_attr_set(struct net_device *dev, const void *ctx,
 			return -EOPNOTSUPP;
 
 		ret = ipqess_port_vlan_filtering(port, attr->u.vlan_filtering,
-					extack);
+					      extack);
 		break;
 	case SWITCHDEV_ATTR_ID_BRIDGE_AGEING_TIME:
 		if (!ipqess_port_offloads_bridge_dev(port, attr->orig_dev))
@@ -971,8 +971,8 @@ int ipqess_port_attr_set(struct net_device *dev, const void *ctx,
 }
 
 int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
-				const struct switchdev_obj *obj,
-				struct netlink_ext_ack *extack)
+				  const struct switchdev_obj *obj,
+				  struct netlink_ext_ack *extack)
 {
 	struct ipqess_port *port = netdev_priv(netdev);
 	int err;
@@ -1025,7 +1025,7 @@ int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
 }
 
 int ipqess_port_obj_del(struct net_device *netdev, const void *ctx,
-				const struct switchdev_obj *obj)
+				  const struct switchdev_obj *obj)
 {
 	struct ipqess_port *port = netdev_priv(netdev);
 	int err;
@@ -1131,7 +1131,7 @@ void ipqess_port_switchdev_event_work(struct work_struct *work)
 
 
 int ipqess_port_check_8021q_upper(struct net_device *netdev,
-			struct netdev_notifier_changeupper_info *info)
+			    struct netdev_notifier_changeupper_info *info)
 {
 	struct ipqess_port *port = netdev_priv(netdev);
 	struct net_device *br = ipqess_port_bridge_dev_get(port);
@@ -1153,13 +1153,13 @@ int ipqess_port_check_8021q_upper(struct net_device *netdev,
 	err = br_vlan_get_info(br, vid, &br_info);
 	if (err == 0) {
 		NL_SET_ERR_MSG_MOD(extack,
-				"This VLAN is already configured by the bridge");
+				   "This VLAN is already configured by the bridge");
 		return notifier_from_errno(-EBUSY);
 	}
 
 	return NOTIFY_DONE;
 }
-/* LAG ops    *************************************************/
+/* LAG ops   *************************************************/
 
 static struct net_device *ipqess_port_lag_dev_get(struct ipqess_port *port)
 {
@@ -1221,7 +1221,7 @@ static struct ipqess_lag *ipqess_switch_lag_find(struct ipqess_switch *sw,
 }
 
 static int ipqess_port_lag_create(struct ipqess_port *port,
-			struct net_device *lag_dev)
+			       struct net_device *lag_dev)
 {
 	struct ipqess_switch *sw = port->sw;
 	struct ipqess_lag *lag;
@@ -1263,9 +1263,9 @@ static void ipqess_port_lag_destroy(struct ipqess_port *port)
 }
 
 static bool ipqess_lag_can_offload(struct ipqess_switch *sw,
-				struct ipqess_lag *lag,
-				struct netdev_lag_upper_info *info,
-				struct netlink_ext_ack *extack)
+				  struct ipqess_lag *lag,
+				  struct netdev_lag_upper_info *info,
+				  struct netlink_ext_ack *extack)
 {
 	struct ipqess_port *port;
 	int members = 0;
@@ -1283,20 +1283,20 @@ static bool ipqess_lag_can_offload(struct ipqess_switch *sw,
 
 	if (members > QCA8K_NUM_PORTS_FOR_LAG) {
 		NL_SET_ERR_MSG_MOD(extack,
-				"Cannot offload more than 4 LAG ports");
+				   "Cannot offload more than 4 LAG ports");
 		return false;
 	}
 
 	if (info->tx_type != NETDEV_LAG_TX_TYPE_HASH) {
 		NL_SET_ERR_MSG_MOD(extack,
-				"Can only offload LAG using hash TX type");
+				   "Can only offload LAG using hash TX type");
 		return false;
 	}
 
 	if (info->hash_type != NETDEV_LAG_HASH_L2 &&
-		info->hash_type != NETDEV_LAG_HASH_L23) {
+	    info->hash_type != NETDEV_LAG_HASH_L23) {
 		NL_SET_ERR_MSG_MOD(extack,
-				"Can only offload L2 or L2+L3 TX hash");
+				   "Can only offload L2 or L2+L3 TX hash");
 		return false;
 	}
 
@@ -1304,7 +1304,7 @@ static bool ipqess_lag_can_offload(struct ipqess_switch *sw,
 }
 
 static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
-				bool delete)
+				     bool delete)
 {
 	//TODO: This whole function needs to be fixed
 	struct ipqess_lag *lag = port->lag;
@@ -1377,14 +1377,14 @@ static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 
 	/* Set port in the correct port mask or disable port if in delete mode */
 	ret = regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL(id),
-				QCA8K_REG_GOL_TRUNK_ID_MEM_ID_PORT(id, i),
-				BIT(port_index) << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(id, i));
+				  QCA8K_REG_GOL_TRUNK_ID_MEM_ID_PORT(id, i),
+				  BIT(port_index) << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(id, i));
 	if (ret)
 		return ret;
 
 	return regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL(id),
-				QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN(id, i),
-				!!delete << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_SHIFT(id, i));
+				  QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN(id, i),
+				  !!delete << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_SHIFT(id, i));
 }
 
 static int ipqess_lag_setup_hash(struct ipqess_switch *sw,
@@ -1432,7 +1432,7 @@ static int ipqess_lag_setup_hash(struct ipqess_switch *sw,
 	}
 
 	return regmap_update_bits(priv->regmap, QCA8K_TRUNK_HASH_EN_CTRL,
-				QCA8K_TRUNK_HASH_MASK, hash);
+				  QCA8K_TRUNK_HASH_MASK, hash);
 }
 
 void ipqess_port_lag_leave(struct ipqess_port *port, struct net_device *lag_dev)
@@ -1455,13 +1455,13 @@ void ipqess_port_lag_leave(struct ipqess_port *port, struct net_device *lag_dev)
 	err = ipqess_lag_refresh_portmap(port, true);
 	if (err)
 		dev_err(port->sw->priv->dev,
-			"port %d failed to leave LAG with err: %pe\n",
+			"port %d failed to leave  LAG with err: %pe\n",
 			port->index, ERR_PTR(err));
 }
 
 int ipqess_port_lag_join(struct ipqess_port *port, struct net_device *lag_dev,
-		struct netdev_lag_upper_info *uinfo,
-		struct netlink_ext_ack *extack)
+		      struct netdev_lag_upper_info *uinfo,
+		      struct netlink_ext_ack *extack)
 {
 	struct net_device *bridge_dev;
 	struct ipqess_lag *lag;
@@ -1568,7 +1568,7 @@ static int ipqess_port_phy_setup(struct net_device *netdev)
 	}
 	if (ret) {
 		netdev_err(netdev, "failed to connect to PHY: %pe\n",
-			ERR_PTR(ret));
+			   ERR_PTR(ret));
 		phylink_destroy(port->pl);
 		port->pl = NULL;
 	}
@@ -1580,7 +1580,7 @@ static int ipqess_port_phy_setup(struct net_device *netdev)
 /* ethtool ops *******************************************/
 
 static void ipqess_port_get_drvinfo(struct net_device *dev,
-				struct ethtool_drvinfo *drvinfo)
+				  struct ethtool_drvinfo *drvinfo)
 {
 	strscpy(drvinfo->driver, "qca8k-ipqess", sizeof(drvinfo->driver));
 	strscpy(drvinfo->fw_version, "N/A", sizeof(drvinfo->fw_version));
@@ -1600,7 +1600,7 @@ static int ipqess_port_get_eeprom_len(struct net_device *dev)
 }
 
 static void ipqess_port_get_strings(struct net_device *dev,
-				uint32_t stringset, uint8_t *data)
+				  uint32_t stringset, uint8_t *data)
 {
 	struct ipqess_port *port = netdev_priv(dev);
 	struct qca8k_priv *priv = port->sw->priv;
@@ -1619,7 +1619,7 @@ static void ipqess_port_get_strings(struct net_device *dev,
 		for (i = 0; i < priv->info->mib_count; i++)
 			strncpy((data + 4 * len) + i * ETH_GSTRING_LEN, ar8327_mib[i].name,
 				ETH_GSTRING_LEN);
-	} else if (stringset == ETH_SS_TEST) {
+	} else if (stringset ==  ETH_SS_TEST) {
 		net_selftest_get_strings(data);
 	}
 
@@ -1693,7 +1693,7 @@ static int ipqess_port_get_sset_count(struct net_device *dev, int sset)
 			return count;
 
 		return count + 4;
-	} else if (sset == ETH_SS_TEST) {
+	} else if (sset ==  ETH_SS_TEST) {
 		return net_selftest_get_count();
 	}
 
@@ -1774,7 +1774,7 @@ static int ipqess_port_set_link_ksettings(struct net_device *dev,
 }
 
 static void ipqess_port_get_pauseparam(struct net_device *dev,
-				struct ethtool_pauseparam *pause)
+				     struct ethtool_pauseparam *pause)
 {
 	struct ipqess_port *port = netdev_priv(dev);
 
@@ -1782,7 +1782,7 @@ static void ipqess_port_get_pauseparam(struct net_device *dev,
 }
 
 static int ipqess_port_set_pauseparam(struct net_device *dev,
-				struct ethtool_pauseparam *pause)
+				    struct ethtool_pauseparam *pause)
 {
 	struct ipqess_port *port = netdev_priv(dev);
 
@@ -1819,7 +1819,8 @@ static const struct nla_policy ipqess_port_policy[IFLA_IPQESS_MAX + 1] = {
 
 static size_t ipqess_port_get_size(const struct net_device *dev)
 {
-	return nla_total_size(sizeof(u32));
+	return nla_total_size(sizeof(u32)) +	/* IFLA_DSA_MASTER  */
+	       0;
 }
 
 static int ipqess_port_fill_info(struct sk_buff *skb, const struct net_device *dev)
@@ -2016,7 +2017,7 @@ static inline bool ipqess_switch_offloads_bridge_port(struct ipqess_switch *sw,
 
 /* Returns true if any port of this switch offloads the given bridge */
 static inline bool ipqess_switch_offloads_bridge_dev(struct ipqess_switch *sw,
-			const struct net_device *bridge_dev)
+			     const struct net_device *bridge_dev)
 {
 	struct ipqess_port *port;
 	int i;
@@ -2036,7 +2037,7 @@ bool ipqess_port_recognize_netdev(const struct net_device *netdev)
 }
 
 bool ipqess_port_recognize_foreign(const struct net_device *netdev,
-				const struct net_device *foreign_netdev)
+				  const struct net_device *foreign_netdev)
 {
 	struct ipqess_port *port = netdev_priv(netdev);
 	struct ipqess_switch *sw = port->sw;

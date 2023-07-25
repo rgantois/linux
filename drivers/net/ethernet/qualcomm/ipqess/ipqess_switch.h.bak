@@ -31,7 +31,7 @@ struct ipqess_devlink_priv {
 };
 
 unsigned int ipqess_switch_fastest_ageing_time(struct ipqess_switch *sw,
-					unsigned int ageing_time);
+						   unsigned int ageing_time);
 int ipqess_set_ageing_time(struct ipqess_switch *sw, unsigned int msecs);
 
 #endif
