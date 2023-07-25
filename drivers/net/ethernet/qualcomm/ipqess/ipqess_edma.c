@@ -36,7 +36,8 @@ static u32 ipqess_edma_r32(struct ipqess_edma *edma, u16 reg)
 	return readl(edma->hw_addr + reg);
 }
 
-static void ipqess_edma_m32(struct ipqess_edma *edma, u32 mask, u32 val, u16 reg)
+static void ipqess_edma_m32(struct ipqess_edma *edma, u32 mask, u32 val,
+		u16 reg)
 {
 	u32 _val = ipqess_edma_r32(edma, reg);
 
@@ -82,16 +83,20 @@ static int ipqess_edma_tx_ring_alloc(struct ipqess_edma *edma)
 		tx_ring->head = idx;
 		tx_ring->tail = idx;
 
-		ipqess_edma_m32(edma, IPQESS_EDMA_TPD_PROD_IDX_MASK << IPQESS_EDMA_TPD_PROD_IDX_SHIFT,
+		ipqess_edma_m32(edma,
+			IPQESS_EDMA_TPD_PROD_IDX_MASK << IPQESS_EDMA_TPD_PROD_IDX_SHIFT,
 			idx, IPQESS_EDMA_REG_TPD_IDX_Q(tx_ring->idx));
-		ipqess_edma_w32(edma, IPQESS_EDMA_REG_TX_SW_CONS_IDX_Q(tx_ring->idx), idx);
-		ipqess_edma_w32(edma, IPQESS_EDMA_REG_TPD_RING_SIZE, IPQESS_EDMA_TX_RING_SIZE);
+		ipqess_edma_w32(edma, IPQESS_EDMA_REG_TX_SW_CONS_IDX_Q(tx_ring->idx),
+				idx);
+		ipqess_edma_w32(edma, IPQESS_EDMA_REG_TPD_RING_SIZE,
+				IPQESS_EDMA_TX_RING_SIZE);
 	}
 
 	return 0;
 }
 
-static int ipqess_edma_tx_unmap_and_free(struct device *dev, struct ipqess_edma_buf *buf)
+static int ipqess_edma_tx_unmap_and_free(struct device *dev,
+		struct ipqess_edma_buf *buf)
 {
 	int len = 0;
 
@@ -148,7 +153,8 @@ static int ipqess_edma_rx_buf_prepare(struct ipqess_edma_buf *buf,
 	rx_ring->head = (rx_ring->head + 1) % IPQESS_EDMA_RX_RING_SIZE;
 
 	ipqess_edma_m32(rx_ring->edma, IPQESS_EDMA_RFD_PROD_IDX_BITS,
-		(rx_ring->head + IPQESS_EDMA_RX_RING_SIZE - 1) % IPQESS_EDMA_RX_RING_SIZE,
+		(rx_ring->head + IPQESS_EDMA_RX_RING_SIZE - 1)
+			% IPQESS_EDMA_RX_RING_SIZE,
 		IPQESS_EDMA_REG_RFD_IDX_Q(rx_ring->idx));
 
 	return 0;
@@ -235,7 +241,8 @@ static int ipqess_edma_rx_ring_alloc(struct ipqess_edma *edma)
 		edma->rx_refill[i].rx_ring = &edma->rx_ring[i];
 		INIT_WORK(&edma->rx_refill[i].refill_work, ipqess_edma_refill_work);
 
-		ipqess_edma_w32(edma, IPQESS_EDMA_REG_RFD_BASE_ADDR_Q(edma->rx_ring[i].idx),
+		ipqess_edma_w32(edma,
+				IPQESS_EDMA_REG_RFD_BASE_ADDR_Q(edma->rx_ring[i].idx),
 				(u32)(edma->rx_ring[i].dma));
 	}
 
@@ -322,7 +329,8 @@ static int ipqess_edma_rx_poll(struct ipqess_edma_rx_ring *rx_ring, int budget)
 
 	rx_ring_tail = rx_ring->tail;
 
-	tail = ipqess_edma_r32(rx_ring->edma, IPQESS_EDMA_REG_RFD_IDX_Q(rx_ring->idx));
+	tail = ipqess_edma_r32(rx_ring->edma,
+			IPQESS_EDMA_REG_RFD_IDX_Q(rx_ring->idx));
 	tail >>= IPQESS_EDMA_RFD_CONS_IDX_SHIFT;
 	tail &= IPQESS_EDMA_RFD_CONS_IDX_MASK;
 
@@ -340,7 +348,8 @@ static int ipqess_edma_rx_poll(struct ipqess_edma_rx_ring *rx_ring, int budget)
 
 		skb = xchg(&rx_ring->buf[rx_ring_tail].skb, NULL);
 		rd = (struct ipqess_edma_rx_desc *)skb->data;
-		rx_ring_tail = IPQESS_EDMA_NEXT_IDX(rx_ring_tail, IPQESS_EDMA_RX_RING_SIZE);
+		rx_ring_tail = IPQESS_EDMA_NEXT_IDX(rx_ring_tail,
+				IPQESS_EDMA_RX_RING_SIZE);
 
 		/* Check if RRD is valid */
 		if (!(rd->rrd7 & cpu_to_le16(IPQESS_EDMA_RRD_DESC_VALID))) {
@@ -362,7 +371,8 @@ static int ipqess_edma_rx_poll(struct ipqess_edma_rx_ring *rx_ring, int budget)
 			skb->tail += (IPQESS_EDMA_RX_HEAD_BUFF_SIZE - IPQESS_EDMA_RRD_SIZE);
 			skb->len = length;
 			skb->truesize = length;
-			size_remaining = length - (IPQESS_EDMA_RX_HEAD_BUFF_SIZE - IPQESS_EDMA_RRD_SIZE);
+			size_remaining =
+				length - (IPQESS_EDMA_RX_HEAD_BUFF_SIZE - IPQESS_EDMA_RRD_SIZE);
 
 			for (i = 1; i < num_desc; i++) {
 				struct sk_buff *skb_temp = rx_ring->buf[rx_ring_tail].skb;
@@ -372,7 +382,8 @@ static int ipqess_edma_rx_poll(struct ipqess_edma_rx_ring *rx_ring, int budget)
 						 rx_ring->buf[rx_ring_tail].length,
 						 DMA_FROM_DEVICE);
 
-				skb_put(skb_temp, min(size_remaining, IPQESS_EDMA_RX_HEAD_BUFF_SIZE));
+				skb_put(skb_temp,
+						min(size_remaining, IPQESS_EDMA_RX_HEAD_BUFF_SIZE));
 				if (skb_prev)
 					skb_prev->next = rx_ring->buf[rx_ring_tail].skb;
 				else
@@ -383,7 +394,8 @@ static int ipqess_edma_rx_poll(struct ipqess_edma_rx_ring *rx_ring, int budget)
 				skb->data_len += rx_ring->buf[rx_ring_tail].skb->len;
 				size_remaining -= rx_ring->buf[rx_ring_tail].skb->len;
 
-				rx_ring_tail = IPQESS_EDMA_NEXT_IDX(rx_ring_tail, IPQESS_EDMA_RX_RING_SIZE);
+				rx_ring_tail = IPQESS_EDMA_NEXT_IDX(rx_ring_tail,
+											IPQESS_EDMA_RX_RING_SIZE);
 			}
 
 		} else {
@@ -423,27 +435,31 @@ skip:
 				num_desc = atomic_add_return(num_desc,
 							&rx_ring->refill_count);
 				if (num_desc >= DIV_ROUND_UP(IPQESS_EDMA_RX_RING_SIZE * 4, 7))
-					schedule_work(&rx_ring->edma->rx_refill[rx_ring->ring_id].refill_work);
+					schedule_work(
+							&rx_ring->edma->rx_refill[rx_ring->ring_id].refill_work);
 				break;
 			}
 			num_desc--;
 		}
 	}
 
-	ipqess_edma_w32(rx_ring->edma, IPQESS_EDMA_REG_RX_SW_CONS_IDX_Q(rx_ring->idx),
+	ipqess_edma_w32(rx_ring->edma,
+			IPQESS_EDMA_REG_RX_SW_CONS_IDX_Q(rx_ring->idx),
 			rx_ring_tail);
 	rx_ring->tail = rx_ring_tail;
 
 	return done;
 }
 
-static int ipqess_edma_tx_complete(struct ipqess_edma_tx_ring *tx_ring, int budget)
+static int ipqess_edma_tx_complete(struct ipqess_edma_tx_ring *tx_ring,
+		int budget)
 {
 	int total = 0, ret;
 	int done = 0;
 	u32 tail;
 
-	tail = ipqess_edma_r32(tx_ring->edma, IPQESS_EDMA_REG_TPD_IDX_Q(tx_ring->idx));
+	tail = ipqess_edma_r32(tx_ring->edma,
+			IPQESS_EDMA_REG_TPD_IDX_Q(tx_ring->idx));
 	tail >>= IPQESS_EDMA_TPD_CONS_IDX_SHIFT;
 	tail &= IPQESS_EDMA_TPD_CONS_IDX_MASK;
 
@@ -455,7 +471,8 @@ static int ipqess_edma_tx_complete(struct ipqess_edma_tx_ring *tx_ring, int budg
 		total += ret;
 	} while ((++done < budget) && (tx_ring->tail != tail));
 
-	ipqess_edma_w32(tx_ring->edma, IPQESS_EDMA_REG_TX_SW_CONS_IDX_Q(tx_ring->idx),
+	ipqess_edma_w32(tx_ring->edma,
+			IPQESS_EDMA_REG_TX_SW_CONS_IDX_Q(tx_ring->idx),
 				tx_ring->tail);
 
 	if (netif_tx_queue_stopped(tx_ring->nq)) {
@@ -471,7 +488,8 @@ static int ipqess_edma_tx_complete(struct ipqess_edma_tx_ring *tx_ring, int budg
 
 static int ipqess_edma_tx_napi(struct napi_struct *napi, int budget)
 {
-	struct ipqess_edma_tx_ring *tx_ring = container_of(napi, struct ipqess_edma_tx_ring,
+	struct ipqess_edma_tx_ring *tx_ring = container_of(napi,
+															struct ipqess_edma_tx_ring,
 															napi_tx);
 	int work_done = 0;
 	u32 tx_status;
@@ -494,8 +512,9 @@ static int ipqess_edma_tx_napi(struct napi_struct *napi, int budget)
 
 static int ipqess_edma_rx_napi(struct napi_struct *napi, int budget)
 {
-	struct ipqess_edma_rx_ring *rx_ring = container_of(napi, struct ipqess_edma_rx_ring,
-							napi_rx);
+	struct ipqess_edma_rx_ring *rx_ring = container_of(napi,
+																struct ipqess_edma_rx_ring,
+																napi_rx);
 	struct ipqess_edma *edma = rx_ring->edma;
 	u32 rx_mask = BIT(rx_ring->idx);
 	int remaining_budget = budget;
@@ -525,8 +544,9 @@ static irqreturn_t ipqess_edma_interrupt_tx(int irq, void *priv)
 
 	if (likely(napi_schedule_prep(&tx_ring->napi_tx))) {
 		__napi_schedule(&tx_ring->napi_tx);
-		ipqess_edma_w32(tx_ring->edma, IPQESS_EDMA_REG_TX_INT_MASK_Q(tx_ring->idx),
-					0x0);
+		ipqess_edma_w32(tx_ring->edma,
+				IPQESS_EDMA_REG_TX_INT_MASK_Q(tx_ring->idx),
+				0x0);
 	}
 
 	return IRQ_HANDLED;
@@ -538,8 +558,9 @@ static irqreturn_t ipqess_edma_interrupt_rx(int irq, void *priv)
 
 	if (likely(napi_schedule_prep(&rx_ring->napi_rx))) {
 		__napi_schedule(&rx_ring->napi_rx);
-		ipqess_edma_w32(rx_ring->edma, IPQESS_EDMA_REG_RX_INT_MASK_Q(rx_ring->idx),
-					0x0);
+		ipqess_edma_w32(rx_ring->edma,
+				IPQESS_EDMA_REG_RX_INT_MASK_Q(rx_ring->idx),
+				0x0);
 	}
 
 	return IRQ_HANDLED;
@@ -552,8 +573,10 @@ static void ipqess_edma_irq_enable(struct ipqess_edma *edma)
 	ipqess_edma_w32(edma, IPQESS_EDMA_REG_RX_ISR, 0xff);
 	ipqess_edma_w32(edma, IPQESS_EDMA_REG_TX_ISR, 0xffff);
 	for (i = 0; i < IPQESS_EDMA_NETDEV_QUEUES; i++) {
-		ipqess_edma_w32(edma, IPQESS_EDMA_REG_RX_INT_MASK_Q(edma->rx_ring[i].idx), 1);
-		ipqess_edma_w32(edma, IPQESS_EDMA_REG_TX_INT_MASK_Q(edma->tx_ring[i].idx), 1);
+		ipqess_edma_w32(edma,
+				IPQESS_EDMA_REG_RX_INT_MASK_Q(edma->rx_ring[i].idx), 1);
+		ipqess_edma_w32(edma,
+				IPQESS_EDMA_REG_TX_INT_MASK_Q(edma->tx_ring[i].idx), 1);
 	}
 }
 
@@ -562,8 +585,10 @@ static void ipqess_edma_irq_disable(struct ipqess_edma *edma)
 	int i;
 
 	for (i = 0; i < IPQESS_EDMA_NETDEV_QUEUES; i++) {
-		ipqess_edma_w32(edma, IPQESS_EDMA_REG_RX_INT_MASK_Q(edma->rx_ring[i].idx), 0);
-		ipqess_edma_w32(edma, IPQESS_EDMA_REG_TX_INT_MASK_Q(edma->tx_ring[i].idx), 0);
+		ipqess_edma_w32(edma,
+				IPQESS_EDMA_REG_RX_INT_MASK_Q(edma->rx_ring[i].idx), 0);
+		ipqess_edma_w32(edma,
+				IPQESS_EDMA_REG_TX_INT_MASK_Q(edma->tx_ring[i].idx), 0);
 	}
 }
 
@@ -593,13 +618,15 @@ static int ipqess_edma_cal_txd_req(struct sk_buff *skb)
 	return tpds;
 }
 
-static struct ipqess_edma_buf *ipqess_edma_get_tx_buffer(struct ipqess_edma_tx_ring *tx_ring,
-															struct ipqess_edma_tx_desc *desc)
+static struct ipqess_edma_buf *ipqess_edma_get_tx_buffer(
+		struct ipqess_edma_tx_ring *tx_ring,
+		struct ipqess_edma_tx_desc *desc)
 {
 	return &tx_ring->buf[desc - tx_ring->hw_desc];
 }
 
-static struct ipqess_edma_tx_desc *ipqess_edma_tx_desc_next(struct ipqess_edma_tx_ring *tx_ring)
+static struct ipqess_edma_tx_desc *ipqess_edma_tx_desc_next(
+		struct ipqess_edma_tx_ring *tx_ring)
 {
 	struct ipqess_edma_tx_desc *desc;
 
@@ -610,7 +637,8 @@ static struct ipqess_edma_tx_desc *ipqess_edma_tx_desc_next(struct ipqess_edma_t
 }
 
 static void ipqess_edma_rollback_tx(struct ipqess_edma *eth,
-											struct ipqess_edma_tx_desc *first_desc, int ring_id)
+											struct ipqess_edma_tx_desc *first_desc,
+											int ring_id)
 {
 	struct ipqess_edma_tx_ring *tx_ring = &eth->tx_ring[ring_id];
 	struct ipqess_edma_tx_desc *desc = NULL;
@@ -788,7 +816,8 @@ netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev)
 			ipqess_edma_r32(edma,
 					IPQESS_EDMA_REG_TX_INT_MASK_Q(tx_ring->idx)));
 		netif_tx_stop_queue(tx_ring->nq);
-		ipqess_edma_w32(tx_ring->edma, IPQESS_EDMA_REG_TX_INT_MASK_Q(tx_ring->idx), 0x1);
+		ipqess_edma_w32(tx_ring->edma,
+				IPQESS_EDMA_REG_TX_INT_MASK_Q(tx_ring->idx), 0x1);
 		ipqess_edma_kick_tx(tx_ring);
 		return NETDEV_TX_BUSY;
 	}
@@ -834,8 +863,10 @@ static void ipqess_edma_hw_stop(struct ipqess_edma *edma)
 	ipqess_edma_w32(edma, IPQESS_EDMA_REG_WOL_CTRL, 0);
 
 	/* disable RX and TX queues */
-	ipqess_edma_m32(edma, IPQESS_EDMA_RXQ_CTRL_EN_MASK, 0, IPQESS_EDMA_REG_RXQ_CTRL);
-	ipqess_edma_m32(edma, IPQESS_EDMA_TXQ_CTRL_TXQ_EN, 0, IPQESS_EDMA_REG_TXQ_CTRL);
+	ipqess_edma_m32(edma, IPQESS_EDMA_RXQ_CTRL_EN_MASK, 0,
+			IPQESS_EDMA_REG_RXQ_CTRL);
+	ipqess_edma_m32(edma, IPQESS_EDMA_TXQ_CTRL_TXQ_EN, 0,
+			IPQESS_EDMA_REG_TXQ_CTRL);
 }
 
 static int ipqess_edma_hw_init(struct ipqess_edma *edma)
@@ -892,7 +923,8 @@ static int ipqess_edma_hw_init(struct ipqess_edma *edma)
 		goto err_rx_ring_free;
 
 	/* Load all of ring base address above into the dma engine */
-	ipqess_edma_m32(edma, 0, BIT(IPQESS_EDMA_LOAD_PTR_SHIFT), IPQESS_EDMA_REG_TX_SRAM_PART);
+	ipqess_edma_m32(edma, 0, BIT(IPQESS_EDMA_LOAD_PTR_SHIFT),
+			IPQESS_EDMA_REG_TX_SRAM_PART);
 
 	/* Disable TX FIFO low watermark and high watermark */
 	ipqess_edma_w32(edma, IPQESS_EDMA_REG_TXF_WATER_MARK, 0);
@@ -903,7 +935,8 @@ static int ipqess_edma_hw_init(struct ipqess_edma *edma)
 	 * and so on
 	 */
 	for (i = 0; i < IPQESS_EDMA_NUM_IDT; i++)
-		ipqess_edma_w32(edma, IPQESS_EDMA_REG_RSS_IDT(i), IPQESS_EDMA_RSS_IDT_VALUE);
+		ipqess_edma_w32(edma, IPQESS_EDMA_REG_RSS_IDT(i),
+				IPQESS_EDMA_RSS_IDT_VALUE);
 
 	/* Configure load balance mapping table.
 	 * 4 table entry will be configured according to the
@@ -921,14 +954,16 @@ static int ipqess_edma_hw_init(struct ipqess_edma *edma)
 		IPQESS_EDMA_AXIW_MAXWRSIZE_VALUE);
 
 	/* Enable TX queues */
-	ipqess_edma_m32(edma, 0, IPQESS_EDMA_TXQ_CTRL_TXQ_EN, IPQESS_EDMA_REG_TXQ_CTRL);
+	ipqess_edma_m32(edma, 0, IPQESS_EDMA_TXQ_CTRL_TXQ_EN,
+			IPQESS_EDMA_REG_TXQ_CTRL);
 
 	/* Enable RX queues */
 	tmp = 0;
 	for (i = 0; i < IPQESS_EDMA_NETDEV_QUEUES; i++)
 		tmp |= IPQESS_EDMA_RXQ_CTRL_EN(edma->rx_ring[i].idx);
 
-	ipqess_edma_m32(edma, IPQESS_EDMA_RXQ_CTRL_EN_MASK, tmp, IPQESS_EDMA_REG_RXQ_CTRL);
+	ipqess_edma_m32(edma, IPQESS_EDMA_RXQ_CTRL_EN_MASK, tmp,
+			IPQESS_EDMA_REG_RXQ_CTRL);
 
 	return 0;
 
@@ -1014,7 +1049,8 @@ int ipqess_edma_init(struct ipqess_switch *sw, struct device_node *np)
 		goto err_clk;
 
 	for (i = 0; i < IPQESS_EDMA_NETDEV_QUEUES; i++) {
-		netif_napi_add_tx(netdev, &edma->tx_ring[i].napi_tx, ipqess_edma_tx_napi);
+		netif_napi_add_tx(netdev, &edma->tx_ring[i].napi_tx,
+				ipqess_edma_tx_napi);
 		netif_napi_add(netdev, &edma->rx_ring[i].napi_rx, ipqess_edma_rx_napi);
 	}
 

@@ -208,10 +208,12 @@ qca8k_get_phy_pkt_gen_test_result(struct phy_device *phy, int pkts_num)
 
 	/* check counters */
 	tx_ok = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_EG_FRAME_RECV_CNT_LO);
-	tx_ok_high16 = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_EG_FRAME_RECV_CNT_HI);
+	tx_ok_high16 = phy_read_mmd(phy, MDIO_MMD_AN,
+			QCA8075_MMD7_EG_FRAME_RECV_CNT_HI);
 	tx_error = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_EG_FRAME_ERR_CNT);
 	rx_ok = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_IG_FRAME_RECV_CNT_LO);
-	rx_ok_high16 = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_IG_FRAME_RECV_CNT_HI);
+	rx_ok_high16 = phy_read_mmd(phy, MDIO_MMD_AN,
+			QCA8075_MMD7_IG_FRAME_RECV_CNT_HI);
 	rx_error = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_IG_FRAME_ERR_CNT);
 	tx_all_ok = tx_ok + (tx_ok_high16 << 16);
 	rx_all_ok = rx_ok + (rx_ok_high16 << 16);
@@ -393,7 +395,8 @@ ipqess_phylink_ipqess_edma_config(struct phylink_config *config,
 				 unsigned int mode,
 				 const struct phylink_link_state *state)
 {
-	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
+	struct ipqess_port *port = container_of(config, struct ipqess_port,
+												pl_config);
 	struct qca8k_priv *priv = port->sw->priv;
 
 	switch (port->index) {
@@ -429,7 +432,8 @@ ipqess_phylink_ipqess_edma_config(struct phylink_config *config,
 }
 
 
-static void ipqess_phylink_ipqess_edma_an_restart(struct phylink_config *config)
+static void ipqess_phylink_ipqess_edma_an_restart(
+		struct phylink_config *config)
 {
 	return;
 }
@@ -439,7 +443,8 @@ ipqess_phylink_ipqess_edma_link_down(struct phylink_config *config,
 				unsigned int mode,
 				phy_interface_t interface)
 {
-	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
+	struct ipqess_port *port = container_of(config,
+												struct ipqess_port, pl_config);
 	struct qca8k_priv *priv = port->sw->priv;
 	struct phy_device *phydev = NULL;
 
@@ -456,7 +461,8 @@ static void ipqess_phylink_mac_link_up(struct phylink_config *config,
 		int speed, int duplex,
 		bool tx_pause, bool rx_pause)
 {
-	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
+	struct ipqess_port *port = container_of(config,
+												struct ipqess_port, pl_config);
 	struct qca8k_priv *priv = port->sw->priv;
 	u32 reg;
 

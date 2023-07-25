@@ -34,7 +34,8 @@ struct net_device *ipqess_port_to_bridge_dev(const struct ipqess_port *port)
 
 /* netdev ops *******************************************/
 
-static void ipqess_port_notify_bridge_fdb_flush(const struct ipqess_port *port, u16 vid)
+static void ipqess_port_notify_bridge_fdb_flush(const struct ipqess_port *port,
+		u16 vid)
 {
 	struct net_device *brport_dev = ipqess_port_to_bridge_dev(port);
 	struct switchdev_notifier_fdb_info info = {
@@ -160,7 +161,8 @@ static int ipqess_port_close(struct net_device *netdev)
 	return 0;
 }
 
-static netdev_tx_t ipqess_port_xmit(struct sk_buff *skb, struct net_device *netdev)
+static netdev_tx_t ipqess_port_xmit(struct sk_buff *skb,
+		struct net_device *netdev)
 {
 	struct ipqess_port *port = netdev_priv(netdev);
 
@@ -196,7 +198,8 @@ static int ipqess_port_set_mac_address(struct net_device *netdev, void *a)
 	return 0;
 }
 
-static int ipqess_port_ioctl(struct net_device *netdev, struct ifreq *ifr, int cmd)
+static int ipqess_port_ioctl(struct net_device *netdev, struct ifreq *ifr,
+		int cmd)
 {
 	struct ipqess_port *port = netdev_priv(netdev);
 	return phylink_mii_ioctl(port->pl, ifr, cmd);
@@ -248,7 +251,8 @@ static int ipqess_port_vlan_add(struct qca8k_priv *priv, int port_index,
 
 	ret = qca8k_vlan_add(priv, port_index, vlan->vid, untagged);
 	if (ret) {
-		dev_err(priv->dev, "Failed to add VLAN to port %d (%d)", port_index, ret);
+		dev_err(priv->dev, "Failed to add VLAN to port %d (%d)", port_index,
+				ret);
 		return ret;
 	}
 
@@ -274,7 +278,8 @@ static int ipqess_port_vlan_del(struct qca8k_priv *priv, int port_index,
 
 	ret = qca8k_vlan_del(priv, port_index, vlan->vid);
 	if (ret)
-		dev_err(priv->dev, "Failed to delete VLAN from port %d (%d)", port_index, ret);
+		dev_err(priv->dev, "Failed to delete VLAN from port %d (%d)", port_index,
+				ret);
 
 	return ret;
 }
@@ -474,7 +479,8 @@ static const struct net_device_ops ipqess_port_netdev_ops = {
 
 /* Bridge ops ************************************************/
 
-static int ipqess_port_bridge_alloc(struct ipqess_port *port, struct net_device *br,
+static int ipqess_port_bridge_alloc(struct ipqess_port *port,
+		struct net_device *br,
 		struct netlink_ext_ack *extack)
 {
 	struct ipqess_bridge *bridge;
@@ -525,7 +531,7 @@ static bool ipqess_port_can_apply_vlan_filtering(struct ipqess_port *port,
 			err = br_vlan_get_info(br, vid, &br_info);
 			if (err == 0) {
 				NL_SET_ERR_MSG_MOD(extack,
-						"Must first remove VLAN uppers having VIDs also present in bridge");
+					"Must first remove VLAN uppers having VIDs also present in bridge");
 				return false;
 			}
 		}
@@ -535,7 +541,8 @@ static bool ipqess_port_can_apply_vlan_filtering(struct ipqess_port *port,
 	return true;
 }
 
-static int ipqess_port_restore_vlan(struct net_device *vdev, int vid, void *arg)
+static int ipqess_port_restore_vlan(struct net_device *vdev, int vid,
+		void *arg)
 {
 	__be16 proto = vdev ? vlan_dev_vlan_proto(vdev) : htons(ETH_P_8021Q);
 
@@ -592,8 +599,9 @@ static int ipqess_write_vlan_filtering(struct qca8k_priv *priv, int port_index,
 	return ret;
 }
 
-static int ipqess_port_vlan_filtering(struct ipqess_port *port, bool vlan_filtering,
-			struct netlink_ext_ack *extack)
+static int ipqess_port_vlan_filtering(struct ipqess_port *port,
+		bool vlan_filtering,
+		struct netlink_ext_ack *extack)
 {
 	bool old_vlan_filtering = port->vlan_filtering;
 	bool apply;
@@ -663,7 +671,8 @@ static void ipqess_port_reset_vlan_filtering(struct ipqess_port *port,
 	}
 }
 
-static int ipqess_port_ageing_time(struct ipqess_port *port, clock_t ageing_clock)
+static int ipqess_port_ageing_time(struct ipqess_port *port,
+		clock_t ageing_clock)
 {
 	unsigned long ageing_jiffies = clock_t_to_jiffies(ageing_clock);
 	unsigned int ageing_time = jiffies_to_msecs(ageing_jiffies);
@@ -841,7 +850,8 @@ out_rollback_unoffload:
 out_rollback_unbridge:
 	for (i = 1; i <= IPQESS_SWITCH_MAX_PORTS; i++) {
 		other_port = sw->port_list[i - 1];
-		if (!other_port || !ipqess_port_offloads_bridge(other_port, port->bridge))
+		if (!other_port ||
+				!ipqess_port_offloads_bridge(other_port, port->bridge))
 			continue;
 		/* Remove this port from the portvlan mask of the other ports
 		 * in the bridge
@@ -1427,7 +1437,8 @@ static int ipqess_lag_setup_hash(struct ipqess_switch *sw,
 	if (unique_lag) {
 		priv->lag_hash_mode = hash;
 	} else if (priv->lag_hash_mode != hash) {
-		netdev_err(lag_dev, "Error: Mismatched Hash Mode across different lag is not supported\n");
+		netdev_err(lag_dev,
+			"Error: Mismatched Hash Mode across different lag is not supported\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -1435,7 +1446,8 @@ static int ipqess_lag_setup_hash(struct ipqess_switch *sw,
 				QCA8K_TRUNK_HASH_MASK, hash);
 }
 
-void ipqess_port_lag_leave(struct ipqess_port *port, struct net_device *lag_dev)
+void ipqess_port_lag_leave(struct ipqess_port *port,
+		struct net_device *lag_dev)
 {
 	struct net_device *br = ipqess_port_bridge_dev_get(port);
 	struct ipqess_lag *lag;
@@ -1573,7 +1585,8 @@ static int ipqess_port_phy_setup(struct net_device *netdev)
 		port->pl = NULL;
 	}
 
-	dev_info(&netdev->dev, "enabled port's phy: %s", phydev_name(netdev->phydev));
+	dev_info(&netdev->dev, "enabled port's phy: %s",
+			phydev_name(netdev->phydev));
 	return ret;
 }
 
@@ -1700,14 +1713,16 @@ static int ipqess_port_get_sset_count(struct net_device *dev, int sset)
 	return -EOPNOTSUPP;
 }
 
-static int ipqess_port_set_wol(struct net_device *dev, struct ethtool_wolinfo *w)
+static int ipqess_port_set_wol(struct net_device *dev,
+		struct ethtool_wolinfo *w)
 {
 	struct ipqess_port *port = netdev_priv(dev);
 
 	return phylink_ethtool_set_wol(port->pl, w);
 }
 
-static void ipqess_port_get_wol(struct net_device *dev, struct ethtool_wolinfo *w)
+static void ipqess_port_get_wol(struct net_device *dev,
+		struct ethtool_wolinfo *w)
 {
 	struct ipqess_port *port = netdev_priv(dev);
 
@@ -1822,7 +1837,8 @@ static size_t ipqess_port_get_size(const struct net_device *dev)
 	return nla_total_size(sizeof(u32));
 }
 
-static int ipqess_port_fill_info(struct sk_buff *skb, const struct net_device *dev)
+static int ipqess_port_fill_info(struct sk_buff *skb,
+		const struct net_device *dev)
 {
 
 	if (nla_put_u32(skb, IFLA_IPQESS_UNSPEC, dev->ifindex))

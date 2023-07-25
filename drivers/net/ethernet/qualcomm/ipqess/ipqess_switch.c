@@ -283,7 +283,8 @@ static int ipqess_switch_setup(struct ipqess_switch *sw)
 			FIELD_PREP(QCA8K_GLOBAL_FW_CTRL1_MC_DP_MASK, 0x3f) |
 			FIELD_PREP(QCA8K_GLOBAL_FW_CTRL1_UC_DP_MASK, 0x3f));
 	if (ret) {
-		pr_err("Error while disabling MAC and forwarding unknown frames %d\n", ret);
+		pr_err("Error while disabling MAC and forwarding unknown frames %d\n",
+				ret);
 		return ret;
 	}
 

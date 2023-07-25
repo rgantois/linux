@@ -180,10 +180,12 @@ netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
 #define IPQESS_EDMA_WOL_IMR_NORMAL_MASK 0x1
 
 /* Edma receive consumer index */
-#define IPQESS_EDMA_REG_RX_SW_CONS_IDX_Q(x) (0x220 + ((x) * 4)) /* x is the queue id */
+#define IPQESS_EDMA_REG_RX_SW_CONS_IDX_Q(x) (0x220 + ((x) * 4))
+															/* x is the queue id */
 
 /* Edma transmit consumer index */
-#define IPQESS_EDMA_REG_TX_SW_CONS_IDX_Q(x) (0x240 + ((x) * 4)) /* x is the queue id */
+#define IPQESS_EDMA_REG_TX_SW_CONS_IDX_Q(x) (0x240 + ((x) * 4))
+															/* x is the queue id */
 
 /* IRQ Moderator Initial Timer Register */
 #define IPQESS_EDMA_REG_IRQ_MODRT_TIMER_INIT 0x280
@@ -247,7 +249,8 @@ netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
 #define IPQESS_EDMA_TPD_RING_SIZE_MASK 0xFFFF
 
 /* Transmit descriptor base addredma */
-#define IPQESS_EDMA_REG_TPD_BASE_ADDR_Q(x) (0x420 + ((x) * 4)) /* x = queue id */
+#define IPQESS_EDMA_REG_TPD_BASE_ADDR_Q(x) (0x420 + ((x) * 4))
+														/* x = queue id */
 
 /* TPD Index Register */
 #define IPQESS_EDMA_REG_TPD_IDX_Q(x) (0x460 + ((x) * 4)) /* x = queue id */
@@ -323,7 +326,8 @@ netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
 #define IPQESS_EDMA_RSS_PRI_ENTRY_BIT_OFFSET 4
 
 /* RSS Indirection Register */
-#define IPQESS_EDMA_REG_RSS_IDT(x) (0x840 + ((x) * 4)) /* x = No. of indirection table */
+#define IPQESS_EDMA_REG_RSS_IDT(x) (0x840 + ((x) * 4))
+												/* x = No. of indirection table */
 #define IPQESS_EDMA_NUM_IDT 16
 #define IPQESS_EDMA_RSS_IDT_VALUE 0x64206420
 
@@ -355,7 +359,8 @@ netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
 #define IPQESS_EDMA_RFS_EXPIRE_COUNT_PER_CALL 128
 
 /* RFD Base Addredma Register */
-#define IPQESS_EDMA_REG_RFD_BASE_ADDR_Q(x) (0x950 + ((x) * 4)) /* x = queue id */
+#define IPQESS_EDMA_REG_RFD_BASE_ADDR_Q(x) (0x950 + ((x) * 4))
+															/* x = queue id */
 
 /* RFD Index Register */
 #define IPQESS_EDMA_REG_RFD_IDX_Q(x) (0x9B0 + ((x) * 4)) /* x = queue id */
@@ -396,8 +401,10 @@ netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
 #define IPQESS_EDMA_AXIW_MAXWRSIZE_VALUE 0x0
 
 /* Rx Statistics Register */
-#define IPQESS_EDMA_REG_RX_STAT_BYTE_Q(x) (0xA30 + ((x) * 4)) /* x = queue id */
-#define IPQESS_EDMA_REG_RX_STAT_PKT_Q(x) (0xA50 + ((x) * 4)) /* x = queue id */
+#define IPQESS_EDMA_REG_RX_STAT_BYTE_Q(x) (0xA30 + ((x) * 4))
+														/* x = queue id */
+#define IPQESS_EDMA_REG_RX_STAT_PKT_Q(x) (0xA50 + ((x) * 4))
+														/* x = queue id */
 
 /* WoL Pattern Length Register */
 #define IPQESS_EDMA_REG_WOL_PATTERN_LEN0 0xC00

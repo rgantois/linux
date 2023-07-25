@@ -95,7 +95,8 @@ int ipqess_port_lag_change(struct ipqess_port *port,
 int ipqess_port_lag_join(struct ipqess_port *port, struct net_device *lag_dev,
 		struct netdev_lag_upper_info *uinfo,
 		struct netlink_ext_ack *extack);
-void ipqess_port_lag_leave(struct ipqess_port *port, struct net_device *lag_dev);
+void ipqess_port_lag_leave(struct ipqess_port *port,
+		struct net_device *lag_dev);
 
 /* Defined in ipqess_phylink.c */
 int ipqess_phylink_create(struct net_device *ndev);
