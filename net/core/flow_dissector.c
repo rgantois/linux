@@ -968,8 +968,7 @@ bool __skb_flow_dissect(const struct net *net,
 			 skb->vlan_proto : skb->protocol;
 		nhoff = skb_network_offset(skb);
 		hlen = skb_headlen(skb);
-		//revert this later!
-#if IS_ENABLED(CONFIG_ANET_DSA)
+#if IS_ENABLED(CONFIG_NET_DSA)
 		if (unlikely(skb->dev && netdev_uses_dsa(skb->dev) &&
 			     proto == htons(ETH_P_XDSA))) {
 			struct metadata_dst *md_dst = skb_metadata_dst(skb);

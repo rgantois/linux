@@ -16,6 +16,8 @@
 #include <linux/of.h>
 #include <linux/of_mdio.h>
 #include <linux/of_net.h>
+#include <linux/dsa/oob.h>
+#include <net/dsa_stubs.h>
 #include <net/sch_generic.h>
 
 #include "devlink.h"
@@ -28,6 +30,39 @@
 #include "tag.h"
 
 #define DSA_MAX_NUM_OFFLOADING_BRIDGES		BITS_PER_LONG
+
+struct sk_buff *oob_tag_xmit(struct sk_buff *skb,
+				    struct net_device *dev)
+{
+	struct dsa_oob_tag_info *tag_info = skb_ext_add(skb, SKB_EXT_DSA_OOB);
+	struct dsa_port *dp = dsa_slave_to_port(dev);
+
+	tag_info->port = dp->index;
+
+	return skb;
+}
+
+struct sk_buff *oob_tag_rcv(struct sk_buff *skb,
+				   struct net_device *dev)
+{
+	struct dsa_oob_tag_info *tag_info = skb_ext_find(skb, SKB_EXT_DSA_OOB);
+
+	if (!tag_info)
+		return NULL;
+
+	skb->dev = dsa_master_find_slave(dev, 0, tag_info->port);
+	if (!skb->dev)
+		return NULL;
+
+	return skb;
+}
+
+static const struct dsa_device_ops oob_tag_dsa_ops = {
+	.name   = "oob",
+	.proto  = DSA_TAG_PROTO_OOB,
+	.xmit   = oob_tag_xmit,
+	.rcv    = oob_tag_rcv,
+};
 
 static DEFINE_MUTEX(dsa2_mutex);
 
@@ -464,6 +499,57 @@ static int dsa_port_setup_as_unused(struct dsa_port *dp)
 	return dsa_port_setup(dp);
 }
 
+static int dsa_switch_setup_tag_protocol(struct dsa_switch *ds)
+{
+	const struct dsa_device_ops *tag_ops = ds->tag_ops;
+	int err;
+
+	if (tag_ops->proto == ds->default_proto)
+		goto connect;
+
+	rtnl_lock();
+	err = ds->ops->change_tag_protocol(ds, tag_ops->proto);
+	rtnl_unlock();
+	if (err) {
+		dev_err(ds->dev, "Unable to use tag protocol \"%s\": %pe\n",
+			tag_ops->name, ERR_PTR(err));
+		return err;
+	}
+
+connect:
+	if (tag_ops->connect) {
+		err = tag_ops->connect(ds);
+		if (err)
+			return err;
+	}
+
+	if (ds->ops->connect_tag_protocol) {
+		err = ds->ops->connect_tag_protocol(ds, tag_ops->proto);
+		if (err) {
+			dev_err(ds->dev,
+				"Unable to connect to tag protocol \"%s\": %pe\n",
+				tag_ops->name, ERR_PTR(err));
+			goto disconnect;
+		}
+	}
+
+	return 0;
+
+disconnect:
+	if (tag_ops->disconnect)
+		tag_ops->disconnect(ds);
+
+	return err;
+}
+
+static void dsa_switch_teardown_tag_protocol(struct dsa_switch *ds)
+{
+	const struct dsa_device_ops *tag_ops = ds->tag_ops;
+
+	if (tag_ops->disconnect)
+		tag_ops->disconnect(ds);
+}
+
 static int dsa_switch_setup(struct dsa_switch *ds)
 {
 	struct device_node *dn;
@@ -492,6 +578,10 @@ static int dsa_switch_setup(struct dsa_switch *ds)
 	err = ds->ops->setup(ds);
 	if (err < 0)
 		goto unregister_notifier;
+
+	err = dsa_switch_setup_tag_protocol(ds);
+	if (err)
+		goto teardown;
 
 	if (!ds->slave_mii_bus && ds->ops->phy_read) {
 		ds->slave_mii_bus = mdiobus_alloc();
@@ -540,6 +630,8 @@ static void dsa_switch_teardown(struct dsa_switch *ds)
 		mdiobus_free(ds->slave_mii_bus);
 		ds->slave_mii_bus = NULL;
 	}
+
+	dsa_switch_teardown_tag_protocol(ds);
 
 	if (ds->ops->teardown)
 		ds->ops->teardown(ds);
@@ -783,6 +875,53 @@ static void dsa_tree_teardown(struct dsa_switch *ds)
 	ds->setup = false;
 }
 
+
+/* Since the dsa/tagging sysfs device attribute is per master, the assumption
+ * is that all DSA switches within a tree share the same tagger, otherwise
+ * they would have formed disjoint trees (different "dsa,member" values).
+ */
+int dsa_tree_change_tag_proto(struct dsa_switch *ds,
+			      const struct dsa_device_ops *tag_ops,
+			      const struct dsa_device_ops *old_tag_ops)
+{
+	struct dsa_notifier_tag_proto_info info;
+	struct dsa_port *dp;
+	int err = -EBUSY;
+
+	if (!rtnl_trylock())
+		return restart_syscall();
+
+	/* At the moment we don't allow changing the tag protocol under
+	 * traffic. The rtnl_mutex also happens to serialize concurrent
+	 * attempts to change the tagging protocol. If we ever lift the IFF_UP
+	 * restriction, there needs to be another mutex which serializes this.
+	 */
+	dsa_tree_for_each_user_port(dp, ds) {
+		if (dsa_port_to_master(dp)->flags & IFF_UP)
+			goto out_unlock;
+
+		if (dp->slave->flags & IFF_UP)
+			goto out_unlock;
+	}
+
+	/* Notify the tag protocol change */
+	info.tag_ops = tag_ops;
+	err = dsa_tree_notify(ds, DSA_NOTIFIER_TAG_PROTO, &info);
+	if (err)
+		goto out_unwind_tagger;
+
+	rtnl_unlock();
+
+	return 0;
+
+out_unwind_tagger:
+	info.tag_ops = old_tag_ops;
+	dsa_tree_notify(ds, DSA_NOTIFIER_TAG_PROTO, &info);
+out_unlock:
+	rtnl_unlock();
+	return err;
+}
+
 static void dsa_tree_master_state_change(struct dsa_switch *ds,
 					 struct net_device *master)
 {
@@ -889,9 +1028,11 @@ static int dsa_port_parse_cpu(struct dsa_port *dp, struct net_device *master,
 {
 	struct dsa_switch *ds = dp->ds;
 
+	ds->default_proto = DSA_TAG_PROTO_OOB;
+	ds->tag_ops = &oob_tag_dsa_ops;
 	dp->master = master;
 	dp->type = DSA_PORT_TYPE_CPU;
-	dsa_port_set_tag_protocol(dp);
+	dsa_port_set_tag_protocol(dp, &oob_tag_dsa_ops);
 
 	/* At this point, the tree may be configured to use a different
 	 * tagger than the one chosen by the switch driver during
@@ -1262,6 +1403,20 @@ bool dsa_mdb_present_in_other_db(struct dsa_switch *ds, int port,
 }
 EXPORT_SYMBOL_GPL(dsa_mdb_present_in_other_db);
 
+static const struct dsa_stubs __dsa_stubs = {
+	.master_hwtstamp_validate = __dsa_master_hwtstamp_validate,
+};
+
+static void dsa_register_stubs(void)
+{
+	dsa_stubs = &__dsa_stubs;
+}
+
+static void dsa_unregister_stubs(void)
+{
+	dsa_stubs = NULL;
+}
+
 static int __init dsa_init_module(void)
 {
 	int rc;
@@ -1281,6 +1436,8 @@ static int __init dsa_init_module(void)
 	if (rc)
 		goto netlink_register_fail;
 
+	dsa_register_stubs();
+
 	return 0;
 
 netlink_register_fail:
@@ -1295,6 +1452,8 @@ module_init(dsa_init_module);
 
 static void __exit dsa_cleanup_module(void)
 {
+	dsa_unregister_stubs();
+
 	rtnl_link_unregister(&dsa_link_ops);
 
 	dsa_slave_unregister_notifier();

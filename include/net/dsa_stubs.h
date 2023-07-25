@@ -8,7 +8,7 @@
 #include <linux/net_tstamp.h>
 #include <net/dsa.h>
 
-#if IS_ENABLED(CONFIG_ANET_DSA)
+#if IS_ENABLED(CONFIG_NET_DSA)
 
 extern const struct dsa_stubs *dsa_stubs;
 

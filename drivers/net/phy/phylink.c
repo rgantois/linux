@@ -1292,7 +1292,6 @@ static void phylink_resolve(struct work_struct *w)
 	bool retrigger = false;
 	bool cur_link_state;
 
-	pr_info("phylink_resolve\n");
 	mutex_lock(&pl->state_mutex);
 	if (pl->netdev)
 		cur_link_state = netif_carrier_ok(ndev);
@@ -1492,7 +1491,6 @@ struct phylink *phylink_create(struct phylink_config *config,
 	struct phylink *pl;
 	int ret;
 
-	pr_info("phylink_create\n");
 	if (mac_ops->mac_select_pcs &&
 	    mac_ops->mac_select_pcs(config, PHY_INTERFACE_MODE_NA) !=
 	      ERR_PTR(-EOPNOTSUPP))

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
 menuconfig NET_DSA
-	bool "Distributed Switch Architecture"
+	tristate "Distributed Switch Architecture"
 	depends on BRIDGE || BRIDGE=n
 	depends on HSR || HSR=n
 	depends on INET && NETDEVICES

@@ -13,7 +13,6 @@
 #include <linux/of_net.h>
 #include <linux/of_mdio.h>
 #include <linux/mdio.h>
-#include <linux/dsa/oob.h>
 #include <net/rtnetlink.h>
 #include <net/pkt_cls.h>
 #include <net/selftests.h>
@@ -25,21 +24,10 @@
 
 #include "dsa.h"
 #include "port.h"
+#include "master.h"
 #include "netlink.h"
 #include "slave.h"
-#include "master.h"
 #include "tag.h"
-
-struct sk_buff *oob_tag_xmit(struct sk_buff *skb,
-				    struct net_device *dev)
-{
-	struct dsa_oob_tag_info *tag_info = skb_ext_add(skb, SKB_EXT_DSA_OOB);
-	struct dsa_port *dp = dsa_slave_to_port(dev);
-
-	tag_info->port = dp->index;
-
-	return skb;
-}
 
 struct dsa_switchdev_event_work {
 	struct net_device *dev;
@@ -2393,6 +2381,7 @@ static int dsa_slave_fill_forward_path(struct net_device_path_ctx *ctx,
 
 	path->dev = ctx->dev;
 	path->type = DEV_PATH_DSA;
+	path->dsa.proto = cpu_dp->tag_ops->proto;
 	path->dsa.port = dp->index;
 	ctx->dev = master;
 
@@ -2520,7 +2509,7 @@ void dsa_slave_setup_tagger(struct net_device *slave)
 	slave->needed_headroom = master->needed_headroom;
 	slave->needed_tailroom = master->needed_tailroom;
 
-	p->xmit = oob_tag_xmit;
+	p->xmit = cpu_dp->tag_ops->xmit;
 
 	slave->features = master->vlan_features | NETIF_F_HW_TC;
 	slave->hw_features |= NETIF_F_HW_TC;

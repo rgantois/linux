@@ -2771,7 +2771,6 @@ __dev_ethtool(struct net *net, struct ifreq *ifr, void __user *useraddr,
 	} else {
 		sub_cmd = ethcmd;
 	}
-	pr_info("ethtool subcmd: %d\n", sub_cmd);
 	/* Allow some commands to be done by anyone */
 	switch (sub_cmd) {
 	case ETHTOOL_GSET:

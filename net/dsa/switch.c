@@ -841,10 +841,36 @@ static int dsa_switch_host_vlan_del(struct dsa_switch *ds,
 static int dsa_switch_change_tag_proto(struct dsa_switch *ds,
 				       struct dsa_notifier_tag_proto_info *info)
 {
+	const struct dsa_device_ops *tag_ops = info->tag_ops;
 	struct dsa_port *dp, *cpu_dp;
 	int err;
 
-	return -EOPNOTSUPP;
+	if (!ds->ops->change_tag_protocol)
+		return -EOPNOTSUPP;
+
+	ASSERT_RTNL();
+
+	err = ds->ops->change_tag_protocol(ds, tag_ops->proto);
+	if (err)
+		return err;
+
+	dsa_switch_for_each_cpu_port(cpu_dp, ds)
+		dsa_port_set_tag_protocol(cpu_dp, tag_ops);
+
+	/* Now that changing the tag protocol can no longer fail, let's update
+	 * the remaining bits which are "duplicated for faster access", and the
+	 * bits that depend on the tagger, such as the MTU.
+	 */
+	dsa_switch_for_each_user_port(dp, ds) {
+		struct net_device *slave = dp->slave;
+
+		dsa_slave_setup_tagger(slave);
+
+		/* rtnl_mutex is held in dsa_tree_change_tag_proto */
+		dsa_slave_change_mtu(slave, slave->mtu);
+	}
+
+	return 0;
 }
 
 static int

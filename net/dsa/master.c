@@ -264,7 +264,9 @@ static void dsa_master_ethtool_teardown(struct net_device *dev)
  */
 static void dsa_master_set_promiscuity(struct net_device *dev, int inc)
 {
-	if (dev->priv_flags & IFF_UNICAST_FLT)
+	const struct dsa_device_ops *ops = dev->dsa_ptr->tag_ops;
+
+	if ((dev->priv_flags & IFF_UNICAST_FLT) && !ops->promisc_on_master)
 		return;
 
 	ASSERT_RTNL();
