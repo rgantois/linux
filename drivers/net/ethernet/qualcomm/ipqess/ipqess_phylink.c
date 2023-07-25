@@ -493,9 +493,9 @@ static const struct phylink_mac_ops ipqess_phylink_mac_ops = {
 };
 
 
-int ipqess_phylink_create(struct net_device *ndev)
+int ipqess_phylink_create(struct net_device *netdev)
 {
-	struct ipqess_port *port = netdev_priv(ndev);
+	struct ipqess_port *port = netdev_priv(netdev);
 	phy_interface_t mode;
 	struct phylink *pl;
 	struct phylink_config *pl_config = &port->pl_config;

@@ -1,17 +1,8 @@
-#include <linux/netdevice.h>
-
-#include <linux/phylink.h>
-#include <linux/etherdevice.h>
-#include <linux/of_net.h>
-#include <linux/dsa/qca8k.h>
-#include <linux/platform_device.h>
 #include <linux/if_bridge.h>
+#include <linux/etherdevice.h>
 #include <linux/if_vlan.h>
-#include <linux/netdevice.h>
-#include <net/rtnetlink.h>
-#include <net/gro_cells.h>
+#include <linux/of_net.h>
 #include <net/selftests.h>
-#include <net/devlink.h>
 
 #include "ipqess_port.h"
 #include "ipqess_edma.h"
@@ -669,7 +660,7 @@ int ipqess_port_ageing_time(struct ipqess_port *port, clock_t ageing_clock)
 	unsigned long ageing_jiffies = clock_t_to_jiffies(ageing_clock);
 	unsigned int ageing_time = jiffies_to_msecs(ageing_jiffies);
 
-	if ((ageing_time < IPQESS_SWITCH_AGEING_TIME_MIN) || 
+	if ((ageing_time < IPQESS_SWITCH_AGEING_TIME_MIN) ||
 		(ageing_time > IPQESS_SWITCH_AGEING_TIME_MAX))
 		return -ERANGE;
 
@@ -782,7 +773,7 @@ int ipqess_port_bridge_join(struct ipqess_port *port, struct net_device *br,
 	//another switch port
 	for (i = 0; i < IPQESS_SWITCH_MAX_PORTS; i++) {
 		other_port = sw->port_list[i];
-		if (other_port && other_port->bridge && 
+		if (other_port && other_port->bridge &&
 				(other_port->bridge->netdev == br))
 			bridge = other_port->bridge;
 	}
@@ -821,7 +812,7 @@ int ipqess_port_bridge_join(struct ipqess_port *port, struct net_device *br,
 
 	brport_dev = ipqess_port_to_bridge_dev(port);
 
-	err = switchdev_bridge_port_offload(brport_dev, port->netdev, port, 
+	err = switchdev_bridge_port_offload(brport_dev, port->netdev, port,
 			&ipqess_switchdev_notifier,
 			&ipqess_switchdev_blocking_notifier,
 			false, extack);
@@ -1412,7 +1403,7 @@ static int ipqess_lag_setup_hash(struct ipqess_switch *sw,
 	}
 
 	/* Check if we are the unique configured LAG */
-	for (id = 1; id <= QCA8K_NUM_LAGS; id++) 
+	for (id = 1; id <= QCA8K_NUM_LAGS; id++)
 		if (id != lag->id && sw->lags[id - 1]) {
 			unique_lag = false;
 			break;
@@ -1557,7 +1548,7 @@ static int ipqess_port_phy_setup(struct net_device *netdev)
 	port->pl_config.type = PHYLINK_NETDEV;
 
 	ret = ipqess_phylink_create(netdev);
-	if (ret) 
+	if (ret)
 		return ret;
 
 	ret = phylink_of_phy_connect(port->pl, port_dn, phy_flags);
@@ -1901,9 +1892,9 @@ int ipqess_port_register(struct ipqess_switch *sw,
 	}
 
 	//for the NAPI leader, we allocate one queue per MAC queue
-	if (!sw->napi_leader) 
+	if (!sw->napi_leader)
 		num_queues = IPQESS_EDMA_NETDEV_QUEUES;
-	else 
+	else
 		num_queues = 1;
 
 	netdev = alloc_netdev_mqs(sizeof(struct ipqess_port), name, assign_type,

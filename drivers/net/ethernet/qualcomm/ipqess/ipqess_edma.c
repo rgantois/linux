@@ -8,25 +8,15 @@
  *
  */
 
-#include <linux/bitfield.h>
-#include <linux/clk.h>
-#include <linux/dsa/oob.h>
-#include <linux/if_vlan.h>
-#include <linux/interrupt.h>
-#include <linux/module.h>
-#include <linux/of.h>
-#include <linux/of_device.h>
-#include <linux/of_mdio.h>
-#include <linux/of_net.h>
-#include <linux/phylink.h>
 #include <linux/platform_device.h>
-#include <linux/reset.h>
+#include <linux/clk.h>
+#include <linux/of_net.h>
 #include <linux/skbuff.h>
-#include <linux/vmalloc.h>
-#include <net/dst_metadata.h>
-#include <net/checksum.h>
-#include <net/dsa.h>
+#include <linux/if_vlan.h>
+#include <linux/reset.h>
+#include <linux/of_platform.h>
 #include <net/ip6_checksum.h>
+#include <net/dst_metadata.h>
 
 #include "ipqess_edma.h"
 #include "ipqess_port.h"
@@ -54,40 +44,6 @@ static void ipqess_edma_m32(struct ipqess_edma *edma, u32 mask, u32 val, u16 reg
 	_val |= val;
 
 	ipqess_edma_w32(edma, reg, _val);
-}
-
-void ipqess_edma_update_hw_stats(struct ipqess_edma *edma)
-{
-	u32 *p;
-	u32 stat;
-	int i;
-
-	lockdep_assert_held(&edma->stats_lock);
-
-	p = (u32 *)&edma->ipqess_edma_stats;
-	for (i = 0; i < IPQESS_EDMA_MAX_TX_QUEUE; i++) {
-		stat = ipqess_edma_r32(edma, IPQESS_EDMA_REG_TX_STAT_PKT_Q(i));
-		*p += stat;
-		p++;
-	}
-
-	for (i = 0; i < IPQESS_EDMA_MAX_TX_QUEUE; i++) {
-		stat = ipqess_edma_r32(edma, IPQESS_EDMA_REG_TX_STAT_BYTE_Q(i));
-		*p += stat;
-		p++;
-	}
-
-	for (i = 0; i < IPQESS_EDMA_MAX_RX_QUEUE; i++) {
-		stat = ipqess_edma_r32(edma, IPQESS_EDMA_REG_RX_STAT_PKT_Q(i));
-		*p += stat;
-		p++;
-	}
-
-	for (i = 0; i < IPQESS_EDMA_MAX_RX_QUEUE; i++) {
-		stat = ipqess_edma_r32(edma, IPQESS_EDMA_REG_RX_STAT_BYTE_Q(i));
-		*p += stat;
-		p++;
-	}
 }
 
 static int ipqess_edma_tx_ring_alloc(struct ipqess_edma *edma)
@@ -317,16 +273,14 @@ static void ipqess_edma_redirect(struct ipqess_edma_rx_ring *rx_ring,
 	struct net_device *netdev;
 	struct ipqess_port *port;
 
-	if (port_id == 0) {
+	port = rx_ring->edma->sw->port_list[port_id - 1];
+	if (!port) {
 		//The switch probably redirected an unknown frame to the CPU port
 		//(IGMP,BC,unknown MC, unknown UC)
-	}
-	netdev = ipqess_get_portdev_by_id(rx_ring->edma->sw, port_id);
-	if (!netdev) {
 		//drop packets directed to port 0 or unregistered ports
 		return;
 	}
-	port = netdev_priv(netdev);
+	netdev = port->netdev;
 
 	if (md_dst && md_dst->type == METADATA_HW_PORT_MUX) {
 		skb_dst_drop(skb);

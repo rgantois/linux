@@ -21,15 +21,6 @@ void ipqess_flush_workqueue(void)
 
 /* switchdev *********************************************/
 
-struct notifier_block ipqess_switchdev_notifier = {
-	.notifier_call = ipqess_switchdev_event,
-};
-
-struct notifier_block ipqess_switchdev_blocking_notifier = {
-	.notifier_call = ipqess_switchdev_blocking_event,
-};
-
-
 static int ipqess_port_fdb_event(struct net_device *netdev,
 			       struct net_device *orig_netdev,
 			       unsigned long event, const void *ctx,
@@ -340,6 +331,14 @@ static int ipqess_netdevice_event(struct notifier_block *nb,
 
 	return NOTIFY_OK;
 }
+
+struct notifier_block ipqess_switchdev_notifier = {
+	.notifier_call = ipqess_switchdev_event,
+};
+
+struct notifier_block ipqess_switchdev_blocking_notifier = {
+	.notifier_call = ipqess_switchdev_blocking_event,
+};
 
 static struct notifier_block ipqess_nb __read_mostly = {
 	.notifier_call  = ipqess_netdevice_event,

@@ -30,8 +30,6 @@ struct ipqess_devlink_priv {
 	struct ipqess_switch *sw;
 };
 
-struct net_device *ipqess_get_portdev_by_id(
-		struct ipqess_switch *sw, int port_id);
 unsigned int ipqess_switch_fastest_ageing_time(struct ipqess_switch *sw,
 						   unsigned int ageing_time);
 int ipqess_set_ageing_time(struct ipqess_switch *sw, unsigned int msecs);

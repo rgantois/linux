@@ -1,8 +1,7 @@
 
 #ifndef IPQESS_PORT_H
 #define IPQESS_PORT_H
-#include <linux/dsa/qca8k.h>
-#include <linux/if_ether.h>
+
 #include <net/gro_cells.h>
 #include <net/devlink.h>
 
@@ -31,12 +30,9 @@ struct ipqess_port {
 	struct ipqess_lag *lag;
 	struct devlink_port devlink_port;
 
-	enum {
-		IPQESS_PORT_TYPE_UNUSED = 0,
-		IPQESS_PORT_TYPE_USER,
-	} type;
+	u8       stp_state;
 
-	u8 stp_state;
+	u8       mac[ETH_ALEN];
 
 	/* Warning: the following bit fields are not atomic, and updating them
 	 * can only be done from code paths where concurrency is not possible
@@ -45,12 +41,6 @@ struct ipqess_port {
 	u8			vlan_filtering:1;
 
 	u8			lag_tx_enabled:1;
-
-	u8			learning:1;
-
-	u8			setup:1;
-
-	u8       mac[ETH_ALEN];
 
 	unsigned int		ageing_time;
 
@@ -71,12 +61,9 @@ struct ipqess_port_dump_ctx {
 int ipqess_port_register(struct ipqess_switch *sw,
 		struct device_node *port_node);
 
-int ipqess_port_rcv(struct sk_buff *skb, struct net_device *dev);
-
 bool ipqess_port_recognize_netdev(const struct net_device *netdev);
 bool ipqess_port_recognize_foreign(const struct net_device *netdev,
 				  const struct net_device *foreign_netdev);
-
 
 int ipqess_port_bridge_join(struct ipqess_port *port, struct net_device *br,
 		struct netlink_ext_ack *extack);
@@ -87,12 +74,7 @@ int ipqess_port_attr_set(struct net_device *dev, const void *ctx,
 				   const struct switchdev_attr *attr,
 				   struct netlink_ext_ack *extack);
 
-bool ipqess_port_offloads_bridge_port(struct ipqess_port *port,
-						 const struct net_device *netdev);
-
-
 void ipqess_port_switchdev_event_work(struct work_struct *work);
-
 
 int ipqess_port_check_8021q_upper(struct net_device *netdev,
 			    struct netdev_notifier_changeupper_info *info);
@@ -114,6 +96,7 @@ int ipqess_port_lag_join(struct ipqess_port *port, struct net_device *lag_dev,
 		      struct netlink_ext_ack *extack);
 void ipqess_port_lag_leave(struct ipqess_port *port, struct net_device *lag_dev);
 
+/* Defined in ipqess_phylink.c */
 int ipqess_phylink_create(struct net_device *ndev);
 
 #endif

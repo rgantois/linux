@@ -1,9 +1,6 @@
 #include <linux/dsa/qca8k.h>
-#include <linux/regmap.h>
 #include <linux/of_platform.h>
 #include <linux/of_mdio.h>
-#include <linux/phylink.h>
-#include <net/devlink.h>
 
 #include "ipqess_switch.h"
 #include "ipqess_port.h"
@@ -160,17 +157,17 @@ static const struct phylink_pcs_ops qca8k_pcs_ops = {
 
 static void ipqess_switch_setup_pcs(struct qca8k_priv *priv,
 				    struct qca8k_pcs *qpcs,
-				    int port)
+				    int port_index)
 {
 	qpcs->pcs.ops = &qca8k_pcs_ops;
 
 	/* We don't have interrupts for link changes, so we need to poll */
 	qpcs->pcs.poll = true;
 	qpcs->priv = priv;
-	qpcs->port = port;
+	qpcs->port = port_index;
 }
 
-static int ipqess_switch_setup_port(struct ipqess_switch *sw, int port)
+static int ipqess_switch_setup_port(struct ipqess_switch *sw, int port_index)
 {
 	struct qca8k_priv *priv = sw->priv;
 	int ret, i;
@@ -178,35 +175,35 @@ static int ipqess_switch_setup_port(struct ipqess_switch *sw, int port)
 	u32 reg;
 
 	/* CPU port gets connected to all registered ports of the switch */
-	if (port == 0) {
+	if (port_index == QCA8K_IPQ4019_CPU_PORT) {
 		for (i = 1; i < IPQESS_SWITCH_MAX_PORTS; i++) {
 			if (sw->port_list[i - 1])
 				mask |= BIT(i);
 		}
-		ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port),
+		ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port_index),
 				QCA8K_PORT_LOOKUP_MEMBER, mask);
 		if (ret)
 			return ret;
-		qca8k_read(priv, QCA8K_PORT_LOOKUP_CTRL(0), &reg);
+		qca8k_read(priv, QCA8K_PORT_LOOKUP_CTRL(QCA8K_IPQ4019_CPU_PORT), &reg);
 
 		/* Disable CPU ARP Auto-learning by default */
 		ret = regmap_clear_bits(priv->regmap,
-					QCA8K_PORT_LOOKUP_CTRL(port),
+					QCA8K_PORT_LOOKUP_CTRL(port_index),
 					QCA8K_PORT_LOOKUP_LEARN);
 		if (ret)
 			return ret;
 	}
 
 	/* Individual user ports get connected to CPU port only */
-	if (port > 0 && (sw->port_list[port - 1] != NULL)) {
-		ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port),
+	if (port_index > 0 && (sw->port_list[port_index - 1] != NULL)) {
+		ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port_index),
 				QCA8K_PORT_LOOKUP_MEMBER,
 				BIT(QCA8K_IPQ4019_CPU_PORT));
 		if (ret)
 			return ret;
 
 		/* Enable ARP Auto-learning by default */
-		ret = regmap_set_bits(priv->regmap, QCA8K_PORT_LOOKUP_CTRL(port),
+		ret = regmap_set_bits(priv->regmap, QCA8K_PORT_LOOKUP_CTRL(port_index),
 				      QCA8K_PORT_LOOKUP_LEARN);
 		if (ret)
 			return ret;
@@ -214,13 +211,13 @@ static int ipqess_switch_setup_port(struct ipqess_switch *sw, int port)
 		/* For port based vlans to work we need to set the
 		 * default egress vid
 		 */
-		ret = qca8k_rmw(priv, QCA8K_EGRESS_VLAN(port),
-				QCA8K_EGREES_VLAN_PORT_MASK(port),
-				QCA8K_EGREES_VLAN_PORT(port, QCA8K_PORT_VID_DEF));
+		ret = qca8k_rmw(priv, QCA8K_EGRESS_VLAN(port_index),
+				QCA8K_EGREES_VLAN_PORT_MASK(port_index),
+				QCA8K_EGREES_VLAN_PORT(port_index, QCA8K_PORT_VID_DEF));
 		if (ret)
 			return ret;
 
-		ret = qca8k_write(priv, QCA8K_REG_PORT_VLAN_CTRL0(port),
+		ret = qca8k_write(priv, QCA8K_REG_PORT_VLAN_CTRL0(port_index),
 				  QCA8K_PORT_VLAN_CVID(QCA8K_PORT_VID_DEF) |
 				  QCA8K_PORT_VLAN_SVID(QCA8K_PORT_VID_DEF));
 		if (ret)
@@ -327,7 +324,7 @@ struct net_device *ipqess_get_portdev_by_id(struct ipqess_switch *sw,
 	}
 	return port->netdev;
 }
- 
+
 /* probe **************************************************/
 
 static int ipqess_switch_probe(struct platform_device *pdev)

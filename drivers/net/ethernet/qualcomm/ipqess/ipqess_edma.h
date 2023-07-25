@@ -49,58 +49,6 @@
 #define IPQESS_EDMA_DESC_SINGLE 0x2
 #define IPQESS_EDMA_DESC_PAGE 0x4
 
-struct ipqess_edma_statistics {
-	u32 tx_q0_pkt;
-	u32 tx_q1_pkt;
-	u32 tx_q2_pkt;
-	u32 tx_q3_pkt;
-	u32 tx_q4_pkt;
-	u32 tx_q5_pkt;
-	u32 tx_q6_pkt;
-	u32 tx_q7_pkt;
-	u32 tx_q8_pkt;
-	u32 tx_q9_pkt;
-	u32 tx_q10_pkt;
-	u32 tx_q11_pkt;
-	u32 tx_q12_pkt;
-	u32 tx_q13_pkt;
-	u32 tx_q14_pkt;
-	u32 tx_q15_pkt;
-	u32 tx_q0_byte;
-	u32 tx_q1_byte;
-	u32 tx_q2_byte;
-	u32 tx_q3_byte;
-	u32 tx_q4_byte;
-	u32 tx_q5_byte;
-	u32 tx_q6_byte;
-	u32 tx_q7_byte;
-	u32 tx_q8_byte;
-	u32 tx_q9_byte;
-	u32 tx_q10_byte;
-	u32 tx_q11_byte;
-	u32 tx_q12_byte;
-	u32 tx_q13_byte;
-	u32 tx_q14_byte;
-	u32 tx_q15_byte;
-	u32 rx_q0_pkt;
-	u32 rx_q1_pkt;
-	u32 rx_q2_pkt;
-	u32 rx_q3_pkt;
-	u32 rx_q4_pkt;
-	u32 rx_q5_pkt;
-	u32 rx_q6_pkt;
-	u32 rx_q7_pkt;
-	u32 rx_q0_byte;
-	u32 rx_q1_byte;
-	u32 rx_q2_byte;
-	u32 rx_q3_byte;
-	u32 rx_q4_byte;
-	u32 rx_q5_byte;
-	u32 rx_q6_byte;
-	u32 rx_q7_byte;
-	u32 tx_desc_error;
-};
-
 struct ipqess_edma_tx_desc {
 	__le16  len;
 	__le16  svlan_tag;
@@ -180,8 +128,6 @@ struct ipqess_edma {
 
 	struct ipqess_edma_tx_ring tx_ring[IPQESS_EDMA_NETDEV_QUEUES];
 
-	struct ipqess_edma_statistics ipqess_edma_stats;
-
 	struct ipqess_switch *sw;
 
 	/* Protects stats */
@@ -195,8 +141,10 @@ struct ipqess_edma {
 	char rx_irq_names[IPQESS_EDMA_MAX_TX_QUEUE][IPQESS_EDMA_IRQ_NAME_LEN];
 };
 
-void ipqess_edma_set_ethtool_ops(struct net_device *netdev);
-void ipqess_edma_update_hw_stats(struct ipqess_edma *edma);
+int ipqess_edma_init(struct ipqess_switch *sw, struct device_node *np);
+int ipqess_edma_uninit(struct ipqess_edma *edma);
+
+netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
 
 /* register definition */
 #define IPQESS_EDMA_REG_MAS_CTRL 0x0
@@ -525,10 +473,5 @@ void ipqess_edma_update_hw_stats(struct ipqess_edma *edma);
 #define IPQESS_EDMA_RRD_PORT_ID_MASK 0x7000
 
 #define IPQESS_EDMA_MAX_MTU 9000
-
-int ipqess_edma_init(struct ipqess_switch *sw, struct device_node *np);
-int ipqess_edma_uninit(struct ipqess_edma *edma);
-
-netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
 
 #endif
