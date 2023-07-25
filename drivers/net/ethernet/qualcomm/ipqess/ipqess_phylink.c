@@ -449,7 +449,6 @@ static void ipqess_phylink_mac_link_up(struct phylink_config *config,
 	struct ipqess_port *port = container_of(config, struct ipqess_port, pl_config);
 	struct qca8k_priv *priv = port->sw->priv;
 	u32 reg;
-	pr_info("mac link up called!\n");
 
 	if (phylink_autoneg_inband(mode)) {
 		reg = QCA8K_PORT_STATUS_LINK_AUTO;

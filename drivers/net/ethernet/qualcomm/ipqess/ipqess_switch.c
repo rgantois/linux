@@ -198,7 +198,7 @@ static int ipqess_switch_setup_port(struct ipqess_switch *sw, int port)
 	}
 
 	/* Individual user ports get connected to CPU port only */
-	if (port > 0 && (ipqess_port_get_netdev(port - 1) != NULL)) {
+	if (port > 0 && (sw->port_list[port - 1] != NULL)) {
 		ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port),
 				QCA8K_PORT_LOOKUP_MEMBER,
 				BIT(QCA8K_IPQ4019_CPU_PORT));
@@ -235,14 +235,6 @@ static int ipqess_switch_setup(struct ipqess_switch *sw)
 	struct qca8k_priv *priv = sw->priv;
 	int ret,i;
 
-	/*
-	if (priv->setup)
-		return 0;
-		*/
-
-	//!!!!!!!!!!!!!
-	//check if port 0 is the cpu port
-	
 	ipqess_switch_setup_pcs(priv, &priv->pcs_port_0, 0);
 
 	/* Enable CPU Port */
@@ -520,7 +512,7 @@ ipqess_switch_remove(struct platform_device *pdev)
 	qca8k_port_set_status(priv, i, 0);
 	priv->port_enabled_map &= ~BIT(0);
 
-	//ipqess_edma_uninit(?);
+	//TODO: ipqess_edma_uninit(?);
 
 	platform_set_drvdata(pdev, NULL);
 
@@ -536,7 +528,7 @@ static struct platform_driver qca8k_ipqess_driver = {
 	.probe = ipqess_switch_probe,
 	.remove = ipqess_switch_remove,
 	.driver = {
-		.name = "qca8k-ipqess",
+		.name = "ipqess",
 		.of_match_table = qca8k_ipqess_of_match,
 	},
 };

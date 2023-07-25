@@ -4,6 +4,7 @@
  * Copyright (c) 2018 - 2019, Christian Lamparter <chunkeey@gmail.com>
  * Copyright (c) 2020 - 2021, Gabor Juhos <j4g8y7@gmail.com>
  * Copyright (c) 2021 - 2022, Maxime Chevallier <maxime.chevallier@bootlin.com>
+ * Copyright (c) 2023, Romain Gantois <romain.gantois@bootlin.com>
  *
  */
 
@@ -309,55 +310,6 @@ static void ipqess_edma_rx_ring_free(struct ipqess_edma *edma)
 	}
 }
 
-/*
-static struct net_device_stats *ipqess_edma_get_stats(struct net_device *netdev)
-{
-	struct ipqess_edma *edma = netdev_priv(netdev);
-
-	spin_lock(&edma->stats_lock);
-	ipqess_edma_update_hw_stats(edma);
-	spin_unlock(&edma->stats_lock);
-
-	return &edma->stats;
-}
-*/
-
-void pkt_hex_dump(struct sk_buff *skb, int port_id, bool tx)
-{
-    size_t len;
-    int rowsize = 16;
-    int i, l, linelen, remaining;
-    int li = 0;
-    uint8_t *data, ch;
-
-    printk("Packet hex dump %px: %d %s\n", skb, port_id, tx ? "TX" : "RX");
-    data = (uint8_t *) skb_mac_header(skb);
-
-    if (skb_is_nonlinear(skb)) {
-        len = skb->data_len;
-    } else {
-        len = skb->len;
-    }
-
-    remaining = len;
-    for (i = 0; i < len; i += rowsize) {
-        printk("%06d\t", li);
-
-        linelen = min(remaining, rowsize);
-        remaining -= rowsize;
-
-        for (l = 0; l < linelen; l++) {
-            ch = data[l];
-            printk(KERN_CONT "%02X ", (uint32_t) ch);
-        }
-
-        data += linelen;
-        li += 10;
-
-        printk(KERN_CONT "\n");
-    }
-}
-
 static void ipqess_edma_redirect(struct ipqess_edma_rx_ring *rx_ring,
 		struct sk_buff *skb, int port_id)
 {
@@ -371,7 +323,7 @@ static void ipqess_edma_redirect(struct ipqess_edma_rx_ring *rx_ring,
 	}
 	netdev = ipqess_get_portdev_by_id(rx_ring->edma->sw, port_id);
 	if (!netdev) {
-		//pr_warn("ipqess_edma: could not determine receiving net device, packet will be abandoned!");
+		//drop packets directed to port 0 or unregistered ports
 		return;
 	}
 	port = netdev_priv(netdev);
@@ -865,13 +817,11 @@ netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev)
 	tx_num = ipqess_edma_cal_txd_req(skb);
 	avail = ipqess_edma_tx_desc_available(tx_ring);
 	if (avail < tx_num) {
-		/*
 		netdev_dbg(netdev,
 			   "stopping tx queue %d, avail=%d req=%d im=%x\n",
 			   tx_ring->idx, avail, tx_num,
-			   ipqess_edma_r32(tx_ring->edma,
+			   ipqess_edma_r32(edma,
 				      IPQESS_EDMA_REG_TX_INT_MASK_Q(tx_ring->idx)));
-		*/
 		netif_tx_stop_queue(tx_ring->nq);
 		ipqess_edma_w32(tx_ring->edma, IPQESS_EDMA_REG_TX_INT_MASK_Q(tx_ring->idx), 0x1);
 		ipqess_edma_kick_tx(tx_ring);
@@ -894,60 +844,6 @@ netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 	return NETDEV_TX_OK;
 }
-
-/*
-static int ipqess_edma_set_mac_address(struct net_device *netdev, void *p)
-{
-	struct ipqess_edma *edma = netdev_priv(netdev);
-	const char *macaddr = netdev->dev_addr;
-	int ret = eth_mac_addr(netdev, p);
-
-	if (ret)
-		return ret;
-
-	ipqess_edma_w32(edma, IPQESS_EDMA_REG_MAC_CTRL1, (macaddr[0] << 8) | macaddr[1]);
-	ipqess_edma_w32(edma, IPQESS_EDMA_REG_MAC_CTRL0,
-		   (macaddr[2] << 24) | (macaddr[3] << 16) | (macaddr[4] << 8) |
-		    macaddr[5]);
-
-	return 0;
-}
-
-static void ipqess_edma_tx_timeout(struct net_device *netdev, unsigned int txq_id)
-{
-	struct ipqess_edma *edma = netdev_priv(netdev);
-	struct ipqess_edma_tx_ring *tr = &edma->tx_ring[txq_id];
-
-	netdev_warn(netdev, "TX timeout on queue %d\n", tr->idx);
-}
-
-static int ipqess_edma_netdevice_event(struct notifier_block *nb,
-				  unsigned long event, void *ptr)
-{
-	struct ipqess_edma *edma = container_of(nb, struct ipqess_edma, netdev_notifier);
-	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
-	struct netdev_notifier_changeupper_info *info;
-
-	if (dev != edma->netdev)
-		return NOTIFY_DONE;
-
-	switch (event) {
-	case NETDEV_CHANGEUPPER:
-		info = ptr;
-
-		if (!dsa_slave_dev_check(info->upper_dev))
-			return NOTIFY_DONE;
-
-		if (info->linking)
-			edma->dsa_ports++;
-		else
-			edma->dsa_ports--;
-
-		return NOTIFY_DONE;
-	}
-	return NOTIFY_OK;
-}
-*/
 
 static void ipqess_edma_hw_stop(struct ipqess_edma *edma)
 {

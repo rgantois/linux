@@ -5,17 +5,6 @@
 
 #include "ipqess_port.h"
 
-int ipqess_notifiers_register(void);
-
-int ipqess_switchdev_event(struct notifier_block *unused,
-					      unsigned long event, void *ptr);
-
-int ipqess_switchdev_blocking_event(struct notifier_block *unused,
-					      unsigned long event, void *ptr);
-
-extern struct notifier_block ipqess_switchdev_notifier;
-extern struct notifier_block ipqess_switchdev_blocking_notifier;
-
 struct ipqess_switchdev_event_work {
 	struct net_device *netdev;
 	struct net_device *orig_netdev;
@@ -28,6 +17,15 @@ struct ipqess_switchdev_event_work {
 	u16 vid;
 	bool host_addr;
 };
+
+int ipqess_switchdev_event(struct notifier_block *unused,
+					      unsigned long event, void *ptr);
+int ipqess_switchdev_blocking_event(struct notifier_block *unused,
+					      unsigned long event, void *ptr);
+
+extern struct notifier_block ipqess_switchdev_notifier;
+extern struct notifier_block ipqess_switchdev_blocking_notifier;
+int ipqess_notifiers_register(void);
 
 bool ipqess_schedule_work(struct work_struct *work);
 void ipqess_flush_workqueue(void);

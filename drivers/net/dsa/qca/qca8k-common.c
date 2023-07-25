@@ -11,7 +11,6 @@
 #include <linux/dsa/qca8k.h>
 #include <linux/if_bridge.h>
 
-
 #define MIB_DESC(_s, _o, _n)	\
 	{			\
 		.size = (_s),	\

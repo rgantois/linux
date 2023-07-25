@@ -6,4 +6,4 @@ ifdef CONFIG_NET_DSA_QCA8K_LEDS_SUPPORT
 qca8k-y				+= qca8k-leds.o
 endif
 
-obj-$(CONFIG_NET_DSA)	+=  qca8k-common.o
+obj-$(CONFIG_QCOM_IPQ4019_ESS_EDMA)	+=  qca8k-common.o

@@ -7,8 +7,6 @@
 #include "ipqess_notifiers.h"
 #include "ipqess_port.h"
 
-/* workqueue *********************************************/
-
 static struct workqueue_struct *ipqess_owq;
 
 bool ipqess_schedule_work(struct work_struct *work)
@@ -57,7 +55,6 @@ static int ipqess_port_fdb_event(struct net_device *netdev,
 	 * Host addresses on LAG ports still require regular FDB ops,
 	 * since the CPU port isn't in a LAG.
 	 */
-
 	if (port->lag && !host_addr) {
 		return -EOPNOTSUPP;
 	}
@@ -91,7 +88,6 @@ int ipqess_switchdev_event(struct notifier_block *unused,
 {
 	struct net_device *netdev = switchdev_notifier_info_to_dev(ptr);
 	int err;
-	pr_info("ipqess_switchdev_event netdev: %s\n", netdev->name);
 
 	switch (event) {
 	case SWITCHDEV_PORT_ATTR_SET:
@@ -118,7 +114,6 @@ int ipqess_switchdev_blocking_event(struct notifier_block *unused,
 {
 	struct net_device *netdev = switchdev_notifier_info_to_dev(ptr);
 	int err;
-	pr_info("ipqess_switchdev_blocking_event\n");
 
 	switch (event) {
 	case SWITCHDEV_PORT_OBJ_ADD:
@@ -232,7 +227,7 @@ static int ipqess_port_prechangeupper(struct net_device *netdev,
 	struct ipqess_port *port = netdev_priv(netdev);
 	int err;
 
-	//sanity checks
+	//sanity check
 	if (is_vlan_dev(info->upper_dev)) {
 		err = ipqess_port_check_8021q_upper(netdev, info);
 		if (notifier_to_errno(err))

@@ -55,6 +55,10 @@ struct ipqess_port {
 	unsigned int		ageing_time;
 
 	struct gro_cells	gcells;
+
+#ifdef CONFIG_NET_POLL_CONTROLLER
+	struct netpoll		*netpoll;
+#endif
 };
 
 struct ipqess_port_dump_ctx {
@@ -69,7 +73,6 @@ int ipqess_port_register(struct ipqess_switch *sw,
 
 int ipqess_port_rcv(struct sk_buff *skb, struct net_device *dev);
 
-struct net_device *ipqess_port_get_netdev(int qid);
 bool ipqess_port_recognize_netdev(const struct net_device *netdev);
 bool ipqess_port_recognize_foreign(const struct net_device *netdev,
 				  const struct net_device *foreign_netdev);
@@ -110,5 +113,7 @@ int ipqess_port_lag_join(struct ipqess_port *port, struct net_device *lag_dev,
 		      struct netdev_lag_upper_info *uinfo,
 		      struct netlink_ext_ack *extack);
 void ipqess_port_lag_leave(struct ipqess_port *port, struct net_device *lag_dev);
+
+int ipqess_phylink_create(struct net_device *ndev);
 
 #endif

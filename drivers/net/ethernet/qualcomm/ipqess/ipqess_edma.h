@@ -4,6 +4,7 @@
  * Copyright (c) 2018 - 2019, Christian Lamparter <chunkeey@gmail.com>
  * Copyright (c) 2020 - 2021, Gabor Juhos <j4g8y7@gmail.com>
  * Copyright (c) 2021 - 2022, Maxime Chevallier <maxime.chevallier@bootlin.com>
+ * Copyright (c) 2023, Romain Gantois <romain.gantois@bootlin.com>
  *
  */
 
@@ -525,10 +526,9 @@ void ipqess_edma_update_hw_stats(struct ipqess_edma *edma);
 
 #define IPQESS_EDMA_MAX_MTU 9000
 
-
 int ipqess_edma_init(struct ipqess_switch *sw, struct device_node *np);
 int ipqess_edma_uninit(struct ipqess_edma *edma);
-netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
 
+netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
 
 #endif

@@ -15,17 +15,42 @@
 
 #include "ipqess_port.h"
 #include "ipqess_edma.h"
-#include "ipqess_phylink.h"
 #include "ipqess_switch.h"
 #include "ipqess_notifiers.h"
-
-static struct net_device *ipqess_port_netdevs[IPQ4019_NUM_PORTS] = {0};
 
 static struct device_type ipqess_port_type = {
 	.name	= "switch",
 };
 
+struct net_device *ipqess_port_to_bridge_dev(const struct ipqess_port *port)
+{
+	if (!port->bridge)
+		return NULL;
+
+	if (port->lag)
+		return port->lag->dev;
+
+	return port->netdev;
+}
+
 /* netdev ops *******************************************/
+
+static void ipqess_port_notify_bridge_fdb_flush(const struct ipqess_port *port, u16 vid)
+{
+	struct net_device *brport_dev = ipqess_port_to_bridge_dev(port);
+	struct switchdev_notifier_fdb_info info = {
+		.vid = vid,
+	};
+
+	/* When the port becomes standalone it has already left the bridge.
+	 * Don't notify the bridge in that case.
+	 */
+	if (!brport_dev)
+		return;
+
+	call_switchdev_notifiers(SWITCHDEV_FDB_FLUSH_TO_BRIDGE,
+				 brport_dev, &info.info, NULL);
+}
 
 static void ipqess_port_fast_age(const struct ipqess_port *port)
 {
@@ -35,8 +60,8 @@ static void ipqess_port_fast_age(const struct ipqess_port *port)
 	qca8k_fdb_access(priv, QCA8K_FDB_FLUSH_PORT, port->index);
 	mutex_unlock(&priv->reg_mutex);
 
-	//!!!!!!!!!!!!!!!!!!!!
-	//ipqess_port_notify_bridge_db_flush()
+	/* Flush all VLANs */
+	ipqess_port_notify_bridge_fdb_flush(port, 0);
 }
 
 static void ipqess_port_stp_state_set(struct ipqess_port *port,
@@ -142,7 +167,6 @@ static netdev_tx_t ipqess_port_xmit(struct sk_buff *skb, struct net_device *netd
 
 	dev_sw_netstats_tx_add(netdev, 1, skb->len);
 
-
 	memset(skb->cb, 0, sizeof(skb->cb));
 
 	return ipqess_edma_xmit(skb, port->netdev);
@@ -209,17 +233,6 @@ static int ipqess_port_change_mtu(struct net_device *dev, int new_mtu)
 	return 0;
 }
 
-struct net_device *ipqess_port_to_bridge_dev(const struct ipqess_port *port)
-{
-	if (!port->bridge)
-		return NULL;
-
-	if (port->lag)
-		return port->lag->dev;
-
-	return port->netdev;
-}
-
 static inline struct net_device *ipqess_port_bridge_dev_get(
 		struct ipqess_port *port)
 {
@@ -233,7 +246,6 @@ static int ipqess_port_vlan_add(struct qca8k_priv *priv, int port_index,
 	bool untagged = vlan->flags & BRIDGE_VLAN_INFO_UNTAGGED;
 	bool pvid = vlan->flags & BRIDGE_VLAN_INFO_PVID;
 	int ret;
-	pr_info("ipqess_port_vlan_add\n");
 
 	ret = qca8k_vlan_add(priv, port_index, vlan->vid, untagged);
 	if (ret) {
@@ -261,7 +273,6 @@ static int ipqess_port_vlan_del(struct qca8k_priv *priv, int port_index,
 {
 	int ret;
 
-	pr_info("ipqess_port_vlan_del\n");
 	ret = qca8k_vlan_del(priv, port_index, vlan->vid);
 	if (ret)
 		dev_err(priv->dev, "Failed to delete VLAN from port %d (%d)", port_index, ret);
@@ -386,7 +397,6 @@ ipqess_port_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb,
 	bool is_static;
 	int ret = 0;
 
-	pr_info("ipqess_port_fdb_dump\n");
 	mutex_lock(&priv->reg_mutex);
 	while (cnt-- && !qca8k_fdb_next(priv, &_fdb, port->index)) {
 		if (!_fdb.aging)
@@ -403,6 +413,48 @@ ipqess_port_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb,
 	return ret;
 }
 
+#ifdef CONFIG_NET_POLL_CONTROLLER
+static int ipqess_port_netpoll_setup(struct net_device *netdev,
+				   struct netpoll_info *ni)
+{
+	struct ipqess_port *port = netdev_priv(netdev);
+	struct net_device *napi_leader = port->sw->napi_leader;
+	struct netpoll *netpoll;
+	int err = 0;
+
+	netpoll = kzalloc(sizeof(*netpoll), GFP_KERNEL);
+	if (!netpoll)
+		return -ENOMEM;
+
+	err = __netpoll_setup(netpoll, napi_leader);
+	if (err) {
+		kfree(netpoll);
+		goto out;
+	}
+
+	port->netpoll = netpoll;
+out:
+	return err;
+}
+
+static void ipqess_port_netpoll_cleanup(struct net_device *netdev)
+{
+	struct ipqess_port *port = netdev_priv(netdev);
+	struct netpoll *netpoll = port->netpoll;
+
+	if (!netpoll)
+		return;
+
+	port->netpoll = NULL;
+
+	__netpoll_free(netpoll);
+}
+
+static void ipqess_port_poll_controller(struct net_device *dev)
+{
+}
+#endif
+
 static const struct net_device_ops ipqess_port_netdev_ops = {
 	.ndo_open	 	= ipqess_port_open,
 	.ndo_stop		= ipqess_port_close,
@@ -414,16 +466,11 @@ static const struct net_device_ops ipqess_port_netdev_ops = {
 	.ndo_vlan_rx_add_vid	= ipqess_port_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid	= ipqess_port_vlan_rx_kill_vid,
 	.ndo_fdb_dump		= ipqess_port_fdb_dump,
-	/*
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_netpoll_setup	= ipqess_port_netpoll_setup,
 	.ndo_netpoll_cleanup	= ipqess_port_netpoll_cleanup,
 	.ndo_poll_controller	= ipqess_port_poll_controller,
 #endif
-	.ndo_setup_tc		= ipqess_port_setup_tc,
-	.ndo_get_stats64	= ipqess_port_get_stats64,
-	.ndo_fill_forward_path	= ipqess_port_fill_forward_path,
-	*/
 };
 
 /* Bridge ops ************************************************/
@@ -445,14 +492,6 @@ int ipqess_port_bridge_alloc(struct ipqess_port *port, struct net_device *br,
 
 	return 0;
 }
-
-/* Make the hardware datapath to/from @dev limited to a common MTU 
-static void ipqess_bridge_mtu_normalization(struct ipqess_port *port)
-{
-	//the QCA8K driver doesn't set mtu_enforcement_ingress so there is 
-	//nothing to do here
-}
-*/
 
 /* Must be called under rcu_read_lock() */
 static bool ipqess_port_can_apply_vlan_filtering(struct ipqess_port *port,
@@ -561,7 +600,6 @@ int ipqess_port_vlan_filtering(struct ipqess_port *port, bool vlan_filtering,
 	bool apply;
 	int err;
 
-	pr_info("ipqess_port_vlan_filtering\n");
 	/* We are called from ipqess_port_switchdev_blocking_event(),
 	 * which is not under rcu_read_lock(), unlike
 	 * ipqess_port_switchdev_event().
@@ -684,7 +722,7 @@ static void ipqess_port_switchdev_unsync_attrs(struct ipqess_port *port,
 
 	ipqess_port_reset_vlan_filtering(port, bridge);
 
-	/* Ageing time may be global to the switch chip, so don't change it
+	/* Ageing time is global to the switch chip, so don't change it
 	 * here because we have no good reason (or value) to change it to.
 	 */
 }
@@ -783,12 +821,10 @@ int ipqess_port_bridge_join(struct ipqess_port *port, struct net_device *br,
 
 	brport_dev = ipqess_port_to_bridge_dev(port);
 
-	pr_info("switchdev_bridge_port_offload bfore err: %d\n", err);
 	err = switchdev_bridge_port_offload(brport_dev, port->netdev, port, 
 			&ipqess_switchdev_notifier,
 			&ipqess_switchdev_blocking_notifier,
 			false, extack);
-	pr_info("switchdev_bridge_port_offload err: %d\n", err);
 	if (err)
 		goto out_rollback_unbridge;
 
@@ -945,8 +981,8 @@ int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
 	if (ctx && ctx != port)
 		return 0;
 
-	pr_info("ipqess_port_obj_add: %d\n", obj->id);
 	switch (obj->id) {
+		/*
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 		if (!ipqess_port_offloads_bridge_port(port, obj->orig_dev))
 			return -EOPNOTSUPP;
@@ -980,6 +1016,7 @@ int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
 		//err = ipqess_port_mrp_add_ring_role(port,
 	//					 SWITCHDEV_OBJ_RING_ROLE_MRP(obj));
 		break;
+		*/
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -997,8 +1034,8 @@ int ipqess_port_obj_del(struct net_device *netdev, const void *ctx,
 	if (ctx && ctx != port)
 		return 0;
 
-	pr_info("ipqess_port_obj_del: %d\n", obj->id);
 	switch (obj->id) {
+		/*
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 		if (!ipqess_port_offloads_bridge_port(port, obj->orig_dev))
 			return -EOPNOTSUPP;
@@ -1032,6 +1069,7 @@ int ipqess_port_obj_del(struct net_device *netdev, const void *ctx,
 		//err = ipqess_port_mrp_del_ring_role(port,
 		//				 SWITCHDEV_OBJ_RING_ROLE_MRP(obj));
 		break;
+	*/
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -1042,6 +1080,7 @@ int ipqess_port_obj_del(struct net_device *netdev, const void *ctx,
 
 void ipqess_port_switchdev_event_work(struct work_struct *work)
 {
+/*
 	struct ipqess_switchdev_event_work *switchdev_work =
 		container_of(work, struct ipqess_switchdev_event_work, work);
 	const unsigned char *addr = switchdev_work->addr;
@@ -1050,7 +1089,6 @@ void ipqess_port_switchdev_event_work(struct work_struct *work)
 	struct ipqess_port *port = netdev_priv(netdev);
 	struct ipqess_switch *sw = port->sw;
 	int err;
-/*
 	switch (switchdev_work->event) {
 	case SWITCHDEV_FDB_ADD_TO_DEVICE:
 		if (switchdev_work->host_addr)
@@ -1269,6 +1307,7 @@ static bool ipqess_lag_can_offload(struct ipqess_switch *sw,
 static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 				     bool delete)
 {
+	//TODO: This whole function needs to be fixed
 	struct ipqess_lag *lag = port->lag;
 	struct ipqess_switch *sw = port->sw;
 	struct qca8k_priv *priv = sw->priv;
@@ -1403,8 +1442,6 @@ void ipqess_port_lag_leave(struct ipqess_port *port, struct net_device *lag_dev)
 	struct ipqess_lag *lag;
 	int err;
 
-	pr_info("ipqess_port_lag_leave");
-
 	if (!port->lag)
 		return;
 
@@ -1430,8 +1467,6 @@ int ipqess_port_lag_join(struct ipqess_port *port, struct net_device *lag_dev,
 	struct net_device *bridge_dev;
 	struct ipqess_lag *lag;
 	int err;
-
-	pr_info("ipqess_port_lag_join");
 
 	err = ipqess_port_lag_create(port, lag_dev);
 	if (err)
@@ -1474,8 +1509,6 @@ int ipqess_port_lag_change(struct ipqess_port *port,
 			struct netdev_lag_lower_state_info *linfo)
 {
 	bool tx_enabled;
-
-	pr_info("ipqess_port_lag_change\n");
 
 	if (!port->lag)
 		return 0;
@@ -1930,7 +1963,6 @@ int ipqess_port_register(struct ipqess_switch *sw,
 	}
 
 	//we use the qid and not the index because port 0 isn't registered
-	ipqess_port_netdevs[port->qid] = netdev;
 	sw->port_list[port->qid] = port;
 
 	rtnl_lock();
@@ -1998,11 +2030,6 @@ static inline bool ipqess_switch_offloads_bridge_dev(struct ipqess_switch *sw,
 	}
 
 	return false;
-}
-
-struct net_device *ipqess_port_get_netdev(int qid)
-{
-	return ipqess_port_netdevs[qid];
 }
 
 bool ipqess_port_recognize_netdev(const struct net_device *netdev)

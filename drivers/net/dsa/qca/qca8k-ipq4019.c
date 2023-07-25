@@ -804,6 +804,7 @@ static const struct dsa_switch_ops qca8k_ipq4019_switch_ops = {
 	.port_vlan_filtering	= qca8k_port_vlan_filtering,
 	.port_vlan_add		= qca8k_port_vlan_add,
 	.port_vlan_del		= qca8k_port_vlan_del,
+	.phylink_mac_select_pcs	= qca8k_ipq4019_phylink_mac_select_pcs,
 	.phylink_get_caps	= qca8k_ipq4019_phylink_get_caps,
 	.phylink_mac_config	= qca8k_phylink_ipq4019_mac_config,
 	.phylink_mac_link_down	= qca8k_phylink_ipq4019_mac_link_down,

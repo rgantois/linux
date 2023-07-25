@@ -594,55 +594,6 @@
 			status = "disabled";
 		};
 
-		gmac: ethernet@c080000 {
-			compatible = "qcom,ipq4019-ess-edma";
-			reg = <0xc080000 0x8000>;
-			resets = <&gcc ESS_RESET>;
-			reset-names = "ess";
-			clocks = <&gcc GCC_ESS_CLK>;
-			clock-names = "ess";
-			interrupts = <GIC_SPI  65 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  66 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  67 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  68 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  69 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  70 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  71 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  72 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  73 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  74 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  75 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  76 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  77 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  78 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  79 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI  80 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 240 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 241 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 242 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 243 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 244 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 245 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 246 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 247 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 248 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 249 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 250 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 251 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 252 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 253 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 254 IRQ_TYPE_EDGE_RISING>,
-				     <GIC_SPI 255 IRQ_TYPE_EDGE_RISING>;
-			phy-mode = "internal";
-			/*
-			fixed-link {
-				speed = <1000>;
-				full-duplex;
-				pause;
-			};
-			*/
-		};
-
 		switch: switch@c000000 {
 			compatible = "qca,ipq4019-qca8337n";
 			reg = <0xc000000 0x80000>, <0x98000 0x800>;
@@ -654,7 +605,6 @@
 			edma-handle = <&gmac>;
 
 			status = "disabled";
-
 
 			ports {
 				#address-cells = <1>;
@@ -704,6 +654,54 @@
 
 					status = "disabled";
 				};
+			};
+		};
+
+		gmac: ethernet@c080000 {
+			compatible = "qcom,ipq4019-ess-edma";
+			reg = <0xc080000 0x8000>;
+			resets = <&gcc ESS_RESET>;
+			reset-names = "ess";
+			clocks = <&gcc GCC_ESS_CLK>;
+			clock-names = "ess";
+			interrupts = <GIC_SPI  65 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  66 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  67 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  68 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  69 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  70 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  71 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  72 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  73 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  74 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  75 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  76 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  77 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  78 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  79 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI  80 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 240 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 241 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 242 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 243 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 244 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 245 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 246 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 247 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 248 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 249 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 250 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 251 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 252 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 253 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 254 IRQ_TYPE_EDGE_RISING>,
+				     <GIC_SPI 255 IRQ_TYPE_EDGE_RISING>;
+			phy-mode = "internal";
+			status = "disabled";
+			fixed-link {
+				speed = <1000>;
+				full-duplex;
+				pause;
 			};
 		};
 
