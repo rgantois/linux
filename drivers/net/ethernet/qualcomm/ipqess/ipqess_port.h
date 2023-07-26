@@ -59,6 +59,13 @@ struct ipqess_port_dump_ctx {
 	int idx;
 };
 
+struct ipqess_mac_addr {
+	unsigned char addr[ETH_ALEN];
+	u16 vid;
+	refcount_t refcount;
+	struct list_head list;
+};
+
 int ipqess_port_register(struct ipqess_switch *sw,
 		struct device_node *port_node);
 
@@ -100,5 +107,8 @@ void ipqess_port_lag_leave(struct ipqess_port *port,
 
 /* Defined in ipqess_phylink.c */
 int ipqess_phylink_create(struct net_device *ndev);
+
+bool ipqess_port_offloads_bridge_port(struct ipqess_port *port,
+						 const struct net_device *netdev);
 
 #endif

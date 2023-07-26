@@ -414,6 +414,10 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 	}
 	priv->ds = NULL;
 
+	mutex_init(&sw->addr_lists_lock);
+	INIT_LIST_HEAD(&sw->fdbs);
+	INIT_LIST_HEAD(&sw->mdbs);
+
 	/* Check the detected switch id */
 	ret = qca8k_read_switch_id(sw->priv);
 	if (ret) {

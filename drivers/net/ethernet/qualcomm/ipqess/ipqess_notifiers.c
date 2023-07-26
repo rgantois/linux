@@ -42,6 +42,10 @@ static int ipqess_port_fdb_event(struct net_device *netdev,
 	if (!port->bridge)
 		return 0;
 
+	if (switchdev_fdb_is_dynamically_learned(fdb_info) &&
+			ipqess_port_offloads_bridge_port(port, orig_netdev))
+			return 0;
+
 	/* Also treat FDB entries on foreign interfaces bridged with us as host
 	 * addresses.
 	 */

@@ -605,6 +605,8 @@ int qca8k_set_ageing_time(struct dsa_switch *ds, unsigned int msecs);
 /* Common FDB function */
 int qca8k_port_fdb_insert(struct qca8k_priv *priv, const u8 *addr,
 			  u16 port_mask, u16 vid);
+int qca8k_fdb_del(struct qca8k_priv *priv, const u8 *mac,
+			 u16 port_mask, u16 vid);
 int qca8k_port_fdb_add(struct dsa_switch *ds, int port,
 		       const unsigned char *addr, u16 vid,
 		       struct dsa_db db);

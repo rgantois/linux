@@ -24,6 +24,12 @@ struct ipqess_switch {
 	//there is a limit to the number of LAGs we can create
 	struct ipqess_lag *lags[QCA8K_NUM_LAGS];
 	bool port0_enabled;
+
+	/* List of MAC addresses that must be forwarded on the cpu port
+	 */
+	struct mutex		addr_lists_lock;
+	struct list_head	fdbs;
+	struct list_head	mdbs;
 };
 
 struct ipqess_devlink_priv {

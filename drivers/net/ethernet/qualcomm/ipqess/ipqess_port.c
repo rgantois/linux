@@ -741,7 +741,7 @@ static inline bool ipqess_port_offloads_bridge(struct ipqess_port *port,
 	return ipqess_port_bridge_dev_get(port) == bridge->netdev;
 }
 
-static inline bool ipqess_port_offloads_bridge_port(struct ipqess_port *port,
+bool ipqess_port_offloads_bridge_port(struct ipqess_port *port,
 						 const struct net_device *netdev)
 {
 	return ipqess_port_to_bridge_dev(port) == netdev;
@@ -990,8 +990,8 @@ int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
 	if (ctx && ctx != port)
 		return 0;
 
+	/*
 	switch (obj->id) {
-		/*
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 		if (!ipqess_port_offloads_bridge_port(port, obj->orig_dev))
 			return -EOPNOTSUPP;
@@ -1013,23 +1013,16 @@ int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
 		//	err = dsa_slave_host_vlan_add(dev, obj, extack);
 		break;
 	case SWITCHDEV_OBJ_ID_MRP:
-		if (!ipqess_port_offloads_bridge_dev(port, obj->orig_dev))
-			return -EOPNOTSUPP;
-
-		//err = ipqess_port_mrp_add(port, SWITCHDEV_OBJ_MRP(obj));
+		return -EOPNOTSUPP;
 		break;
 	case SWITCHDEV_OBJ_ID_RING_ROLE_MRP:
-		if (!ipqess_port_offloads_bridge_dev(port, obj->orig_dev))
-			return -EOPNOTSUPP;
-
-		//err = ipqess_port_mrp_add_ring_role(port,
-	//					 SWITCHDEV_OBJ_RING_ROLE_MRP(obj));
+		return -EOPNOTSUPP;
 		break;
-		*/
 	default:
 		err = -EOPNOTSUPP;
 		break;
 	}
+	*/
 
 	return err;
 }
@@ -1043,8 +1036,8 @@ int ipqess_port_obj_del(struct net_device *netdev, const void *ctx,
 	if (ctx && ctx != port)
 		return 0;
 
+	/*
 	switch (obj->id) {
-		/*
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
 		if (!ipqess_port_offloads_bridge_port(port, obj->orig_dev))
 			return -EOPNOTSUPP;
@@ -1078,18 +1071,110 @@ int ipqess_port_obj_del(struct net_device *netdev, const void *ctx,
 		//err = ipqess_port_mrp_del_ring_role(port,
 		//				 SWITCHDEV_OBJ_RING_ROLE_MRP(obj));
 		break;
-	*/
 	default:
 		err = -EOPNOTSUPP;
 		break;
 	}
+	*/
 
 	return err;
 }
 
+static int ipqess_cpu_port_fdb_del(struct ipqess_port *port,
+		const unsigned char *addr, u16 vid)
+{
+	struct ipqess_switch *sw = port->sw;
+	struct ipqess_mac_addr *a = NULL;
+	struct ipqess_mac_addr *other_a;
+	int err = 0;
+
+	mutex_lock(&sw->addr_lists_lock);
+
+	list_for_each_entry(other_a, &sw->fdbs, list)
+	if (ether_addr_equal(other_a->addr, addr) && other_a->vid == vid)
+		a = other_a;
+
+	if (!a) {
+		err = -ENOENT;
+		goto out;
+	}
+
+	if (!refcount_dec_and_test(&a->refcount))
+		goto out;
+
+	err = qca8k_fdb_del(sw->priv, addr, BIT(QCA8K_IPQ4019_CPU_PORT), vid);
+	if (err) {
+		refcount_set(&a->refcount, 1);
+		goto out;
+	}
+
+	list_del(&a->list);
+	kfree(a);
+
+out:
+	mutex_unlock(&sw->addr_lists_lock);
+
+	return err;
+}
+
+static int ipqess_cpu_port_fdb_add(struct ipqess_port *port,
+		const unsigned char *addr, u16 vid)
+{
+	struct ipqess_switch *sw = port->sw;
+	struct ipqess_mac_addr *a = NULL;
+	struct ipqess_mac_addr *other_a = NULL;
+	int err = 0;
+
+	mutex_lock(&sw->addr_lists_lock);
+
+
+	list_for_each_entry(other_a, &sw->fdbs, list)
+	if (ether_addr_equal(other_a->addr, addr) && other_a->vid == vid)
+		a = other_a;
+
+	if (a) {
+		refcount_inc(&a->refcount);
+		goto out;
+	}
+
+	a = kzalloc(sizeof(*a), GFP_KERNEL);
+	if (!a) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	err = qca8k_port_fdb_insert(port->sw->priv, addr,
+			BIT(QCA8K_IPQ4019_CPU_PORT), vid);
+	if (err) {
+		kfree(a);
+		goto out;
+	}
+
+	ether_addr_copy(a->addr, addr);
+	a->vid = vid;
+	refcount_set(&a->refcount, 1);
+	list_add_tail(&a->list, &sw->fdbs);
+
+out:
+	mutex_unlock(&sw->addr_lists_lock);
+
+	return err;
+}
+
+static void
+ipqess_fdb_offload_notify(struct ipqess_switchdev_event_work *switchdev_work)
+{
+	struct switchdev_notifier_fdb_info info = {};
+
+	info.addr = switchdev_work->addr;
+	info.vid = switchdev_work->vid;
+	info.offloaded = true;
+	call_switchdev_notifiers(SWITCHDEV_FDB_OFFLOADED,
+				 switchdev_work->orig_netdev, &info.info, NULL);
+}
+
 void ipqess_port_switchdev_event_work(struct work_struct *work)
 {
-/*
 	struct ipqess_switchdev_event_work *switchdev_work =
 		container_of(work, struct ipqess_switchdev_event_work, work);
 	const unsigned char *addr = switchdev_work->addr;
@@ -1097,17 +1182,20 @@ void ipqess_port_switchdev_event_work(struct work_struct *work)
 	u16 vid = switchdev_work->vid;
 	struct ipqess_port *port = netdev_priv(netdev);
 	struct ipqess_switch *sw = port->sw;
+	struct qca8k_priv *priv = sw->priv;
 	int err;
+
+	if (!vid)
+		vid = QCA8K_PORT_VID_DEF;
+
 	switch (switchdev_work->event) {
 	case SWITCHDEV_FDB_ADD_TO_DEVICE:
 		if (switchdev_work->host_addr)
-			err = ipqess_port_bridge_host_fdb_add(port, addr, vid);
-		/*TODO
-		else if (dp->lag)
-			err = ipqess_port_lag_fdb_add(dp, addr, vid);
-			/
+			err = ipqess_cpu_port_fdb_add(port, addr, vid);
+		else if (port->lag)
+			err = -EOPNOTSUPP;
 		else
-			err = ipqess_port_fdb_add(port, addr, vid);
+			err = qca8k_port_fdb_insert(priv, addr, BIT(port->index), vid);
 		if (err) {
 			dev_err(&port->netdev->dev,
 				"port %d failed to add %pM vid %d to fdb: %d\n",
@@ -1119,13 +1207,11 @@ void ipqess_port_switchdev_event_work(struct work_struct *work)
 
 	case SWITCHDEV_FDB_DEL_TO_DEVICE:
 		if (switchdev_work->host_addr)
-			err = ipqess_port_bridge_host_fdb_del(port, addr, vid);
-		/*TODO
+			err = ipqess_cpu_port_fdb_del(port, addr, vid);
 		else if (port->lag)
-			err = ipqess_port_lag_fdb_del(port, addr, vid);
-			/
+			err = -EOPNOTSUPP;
 		else
-			err = ipqess_port_fdb_del(port, addr, vid);
+			err = qca8k_fdb_del(priv, addr, BIT(port->index), vid);
 		if (err) {
 			dev_err(&port->netdev->dev,
 				"port %d failed to delete %pM vid %d from fdb: %d\n",
@@ -1136,7 +1222,6 @@ void ipqess_port_switchdev_event_work(struct work_struct *work)
 	}
 
 	kfree(switchdev_work);
-	*/
 }
 
 
@@ -1339,13 +1424,10 @@ static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 	else
 		val |= BIT(port_index);
 
-	u32 dbg;
-	regmap_read(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0, &dbg);
 	/* Update port member. */
 	ret = regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0,
 				 QCA8K_REG_GOL_TRUNK_MEMBER(id),
 				 val << QCA8K_REG_GOL_TRUNK_SHIFT(id));
-	regmap_read(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0, &dbg);
 	if (ret)
 		return ret;
 
@@ -1353,7 +1435,6 @@ static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 	ret = regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0,
 				 QCA8K_REG_GOL_TRUNK_EN(id),
 				 !!val << QCA8K_REG_GOL_TRUNK_EN_SHIFT(id));
-	regmap_read(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0, &dbg);
 	if (ret)
 		return ret;
 
@@ -2018,7 +2099,7 @@ out_free:
 /* Utilities *****************************************/
 
 /* Returns true if any port of this switch offloads the given net_device */
-static inline bool ipqess_switch_offloads_bridge_port(struct ipqess_switch *sw,
+static bool ipqess_switch_offloads_bridge_port(struct ipqess_switch *sw,
 						 const struct net_device *netdev)
 {
 	struct ipqess_port *port;

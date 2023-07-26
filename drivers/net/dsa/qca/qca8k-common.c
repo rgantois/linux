@@ -222,7 +222,7 @@ static int qca8k_fdb_add(struct qca8k_priv *priv, const u8 *mac,
 	return ret;
 }
 
-static int qca8k_fdb_del(struct qca8k_priv *priv, const u8 *mac,
+int qca8k_fdb_del(struct qca8k_priv *priv, const u8 *mac,
 			 u16 port_mask, u16 vid)
 {
 	int ret;
