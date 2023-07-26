@@ -1316,7 +1316,6 @@ static bool ipqess_lag_can_offload(struct ipqess_switch *sw,
 static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 				bool delete)
 {
-	//TODO: This whole function needs to be fixed
 	struct ipqess_lag *lag = port->lag;
 	struct ipqess_switch *sw = port->sw;
 	struct qca8k_priv *priv = sw->priv;
@@ -1332,7 +1331,7 @@ static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 	if (ret)
 		return ret;
 
-	/* Shift val to the correct trunk */
+	/* Shift val from the correct trunk */
 	val >>= QCA8K_REG_GOL_TRUNK_SHIFT(id);
 	val &= QCA8K_REG_GOL_TRUNK_MEMBER_MASK;
 	if (delete)
@@ -1340,10 +1339,13 @@ static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 	else
 		val |= BIT(port_index);
 
+	u32 dbg;
+	regmap_read(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0, &dbg);
 	/* Update port member. */
 	ret = regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0,
 				 QCA8K_REG_GOL_TRUNK_MEMBER(id),
 				 val << QCA8K_REG_GOL_TRUNK_SHIFT(id));
+	regmap_read(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0, &dbg);
 	if (ret)
 		return ret;
 
@@ -1351,6 +1353,7 @@ static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 	ret = regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0,
 				 QCA8K_REG_GOL_TRUNK_EN(id),
 				 !!val << QCA8K_REG_GOL_TRUNK_EN_SHIFT(id));
+	regmap_read(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0, &dbg);
 	if (ret)
 		return ret;
 
@@ -1367,7 +1370,7 @@ static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 			/* If port flagged to be disabled assume this member is
 			 * empty
 			 */
-			if (val != QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_MASK)
+			if (!(val & QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_MASK))
 				continue;
 
 			val &= QCA8K_REG_GOL_TRUNK_ID_MEM_ID_PORT_MASK;
@@ -1377,7 +1380,7 @@ static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 			/* If port flagged to be enabled assume this member is
 			 * already set
 			 */
-			if (val == QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_MASK)
+			if (val & QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_MASK)
 				continue;
 		}
 
@@ -1388,13 +1391,13 @@ static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
 	/* Set port in the correct port mask or disable port if in delete mode */
 	ret = regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL(id),
 				QCA8K_REG_GOL_TRUNK_ID_MEM_ID_PORT(id, i),
-				BIT(port_index) << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(id, i));
+				port_index << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(id, i));
 	if (ret)
 		return ret;
 
 	return regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL(id),
 				QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN(id, i),
-				!!delete << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_SHIFT(id, i));
+				!delete << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_SHIFT(id, i));
 }
 
 static int ipqess_lag_setup_hash(struct ipqess_switch *sw,
@@ -1462,13 +1465,13 @@ void ipqess_port_lag_leave(struct ipqess_port *port,
 	if (br)
 		ipqess_port_bridge_leave(port, br);
 
-	ipqess_port_lag_destroy(port);
-
 	err = ipqess_lag_refresh_portmap(port, true);
 	if (err)
 		dev_err(port->sw->priv->dev,
 			"port %d failed to leave LAG with err: %pe\n",
 			port->index, ERR_PTR(err));
+
+	ipqess_port_lag_destroy(port);
 }
 
 int ipqess_port_lag_join(struct ipqess_port *port, struct net_device *lag_dev,

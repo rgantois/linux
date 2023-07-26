@@ -285,11 +285,11 @@
 #define QCA8K_REG_GOL_TRUNK_MEMBER_MASK			GENMASK(6, 0)
 #define QCA8K_REG_GOL_TRUNK_MEMBER(_i)			(QCA8K_REG_GOL_TRUNK_MEMBER_MASK << QCA8K_REG_GOL_TRUNK_SHIFT(_i))
 /* 0x704 for TRUNK 0-1 --- 0x708 for TRUNK 2-3 */
-#define QCA8K_REG_GOL_TRUNK_CTRL(_i)			(0x704 + (((_i) / 2) * 4))
+#define QCA8K_REG_GOL_TRUNK_CTRL(_i)			(0x704 + (((_i) >> 1) * 4))
 #define QCA8K_REG_GOL_TRUNK_ID_MEM_ID_MASK		GENMASK(3, 0)
 #define QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_MASK		BIT(3)
 #define QCA8K_REG_GOL_TRUNK_ID_MEM_ID_PORT_MASK		GENMASK(2, 0)
-#define QCA8K_REG_GOL_TRUNK_ID_SHIFT(_i)		(((_i) / 2) * 16)
+#define QCA8K_REG_GOL_TRUNK_ID_SHIFT(_i)		((_i % 2) * 16)
 #define QCA8K_REG_GOL_MEM_ID_SHIFT(_i)			((_i) * 4)
 /* Complex shift: FIRST shift for port THEN shift for trunk */
 #define QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(_i, _j)	(QCA8K_REG_GOL_MEM_ID_SHIFT(_j) + QCA8K_REG_GOL_TRUNK_ID_SHIFT(_i))
@@ -331,7 +331,7 @@
 #define QCA8K_EGREES_VLAN_PORT_SHIFT(_i)		(16 * ((_i) % 2))
 #define QCA8K_EGREES_VLAN_PORT_MASK(_i)			(GENMASK(11, 0) << QCA8K_EGREES_VLAN_PORT_SHIFT(_i))
 #define QCA8K_EGREES_VLAN_PORT(_i, x)			((x) << QCA8K_EGREES_VLAN_PORT_SHIFT(_i))
-#define QCA8K_EGRESS_VLAN(x)				(0x0c70 + (4 * (x / 2)))
+#define QCA8K_EGRESS_VLAN(x)				(0x0c70 + (4 * (x >> 2)))
 
 /* L3 registers */
 #define QCA8K_HROUTER_CONTROL				0xe00
