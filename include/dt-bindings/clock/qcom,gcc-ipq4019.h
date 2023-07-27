@@ -171,5 +171,10 @@
 #define ESS_MAC4_ARES					75
 #define ESS_MAC5_ARES					76
 #define ESS_PSGMII_ARES					77
+#define ESS_MAC1_CLK_DIS				78
+#define ESS_MAC2_CLK_DIS				79
+#define ESS_MAC3_CLK_DIS				80
+#define ESS_MAC4_CLK_DIS				81
+#define ESS_MAC5_CLK_DIS				82
 
 #endif
