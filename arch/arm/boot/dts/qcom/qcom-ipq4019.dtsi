@@ -8,6 +8,7 @@
 #include <dt-bindings/clock/qcom,gcc-ipq4019.h>
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/net/qcom-qca807x.h>
 
 / {
 	#address-cells = <1>;
@@ -605,6 +606,7 @@
 			clocks = <&gcc GCC_ESS_CLK>;
 			clock-names = "ess";
 			mdio = <&mdio>;
+			psgmii-ethphy = <&psgmiiphy>;
 			interrupts = <GIC_SPI  65 IRQ_TYPE_EDGE_RISING>,
 				     <GIC_SPI  66 IRQ_TYPE_EDGE_RISING>,
 				     <GIC_SPI  67 IRQ_TYPE_EDGE_RISING>,
@@ -699,22 +701,37 @@
 
 			ethphy0: ethernet-phy@0 {
 				reg = <0>;
+
+				qcom,control-dac = <QCA807X_CONTROL_DAC_DSP_VOLT_QUARTER_BIAS>;
 			};
 
 			ethphy1: ethernet-phy@1 {
 				reg = <1>;
+
+				qcom,control-dac = <QCA807X_CONTROL_DAC_DSP_VOLT_QUARTER_BIAS>;
 			};
 
 			ethphy2: ethernet-phy@2 {
 				reg = <2>;
+
+				qcom,control-dac = <QCA807X_CONTROL_DAC_DSP_VOLT_QUARTER_BIAS>;
 			};
 
 			ethphy3: ethernet-phy@3 {
 				reg = <3>;
+
+				qcom,control-dac = <QCA807X_CONTROL_DAC_DSP_VOLT_QUARTER_BIAS>;
 			};
 
 			ethphy4: ethernet-phy@4 {
 				reg = <4>;
+
+				qcom,control-dac = <QCA807X_CONTROL_DAC_DSP_VOLT_QUARTER_BIAS>;
+			};
+			psgmiiphy: psgmii-phy@5 {
+				reg = <5>;
+
+				qcom,tx-driver-strength = <PSGMII_QSGMII_TX_DRIVER_300MV>;
 			};
 		};
 
