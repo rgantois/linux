@@ -8,9 +8,8 @@
 
 #include <linux/netdevice.h>
 #include <net/dsa.h>
+#include <linux/dsa/qca8k.h>
 #include <linux/if_bridge.h>
-
-#include "qca8k.h"
 
 #define MIB_DESC(_s, _o, _n)	\
 	{			\
@@ -161,7 +160,7 @@ static void qca8k_fdb_write(struct qca8k_priv *priv, u16 vid, u8 port_mask,
 			  QCA8K_ATU_TABLE_SIZE);
 }
 
-static int qca8k_fdb_access(struct qca8k_priv *priv, enum qca8k_fdb_cmd cmd,
+int qca8k_fdb_access(struct qca8k_priv *priv, enum qca8k_fdb_cmd cmd,
 			    int port)
 {
 	u32 reg;
@@ -197,7 +196,7 @@ static int qca8k_fdb_access(struct qca8k_priv *priv, enum qca8k_fdb_cmd cmd,
 	return 0;
 }
 
-static int qca8k_fdb_next(struct qca8k_priv *priv, struct qca8k_fdb *fdb,
+int qca8k_fdb_next(struct qca8k_priv *priv, struct qca8k_fdb *fdb,
 			  int port)
 {
 	int ret;
@@ -223,7 +222,7 @@ static int qca8k_fdb_add(struct qca8k_priv *priv, const u8 *mac,
 	return ret;
 }
 
-static int qca8k_fdb_del(struct qca8k_priv *priv, const u8 *mac,
+int qca8k_fdb_del(struct qca8k_priv *priv, const u8 *mac,
 			 u16 port_mask, u16 vid)
 {
 	int ret;
@@ -316,7 +315,7 @@ exit:
 	return ret;
 }
 
-static int qca8k_vlan_access(struct qca8k_priv *priv,
+int qca8k_vlan_access(struct qca8k_priv *priv,
 			     enum qca8k_vlan_cmd cmd, u16 vid)
 {
 	u32 reg;
@@ -349,7 +348,7 @@ static int qca8k_vlan_access(struct qca8k_priv *priv,
 	return 0;
 }
 
-static int qca8k_vlan_add(struct qca8k_priv *priv, u8 port, u16 vid,
+int qca8k_vlan_add(struct qca8k_priv *priv, u8 port, u16 vid,
 			  bool untagged)
 {
 	u32 reg;
@@ -387,7 +386,7 @@ out:
 	return ret;
 }
 
-static int qca8k_vlan_del(struct qca8k_priv *priv, u8 port, u16 vid)
+int qca8k_vlan_del(struct qca8k_priv *priv, u8 port, u16 vid)
 {
 	u32 reg, mask;
 	int ret, i;
