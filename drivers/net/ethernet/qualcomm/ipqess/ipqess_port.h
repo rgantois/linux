@@ -87,7 +87,7 @@ void ipqess_port_switchdev_event_work(struct work_struct *work);
 int ipqess_port_check_8021q_upper(struct net_device *netdev,
 			struct netdev_notifier_changeupper_info *info);
 
-struct net_device *ipqess_port_to_bridge_dev(const struct ipqess_port *port);
+struct net_device *ipqess_port_get_bridged_netdev(const struct ipqess_port *port);
 
 int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
 				const struct switchdev_obj *obj,

@@ -237,7 +237,7 @@ static int ipqess_port_prechangeupper(struct net_device *netdev,
 
 	//prechangeupper
 	if (netif_is_bridge_master(info->upper_dev) && !info->linking) {
-		brport_dev = ipqess_port_to_bridge_dev(port);
+		brport_dev = ipqess_port_get_bridged_netdev(port);
 	} else if (netif_is_lag_master(info->upper_dev) && !info->linking) {
 		brport_dev = port->bridge ? port->bridge->netdev : NULL;
 	} else {

@@ -21,7 +21,7 @@ static struct device_type ipqess_port_type = {
 	.name	= "switch",
 };
 
-struct net_device *ipqess_port_to_bridge_dev(const struct ipqess_port *port)
+struct net_device *ipqess_port_get_bridged_netdev(const struct ipqess_port *port)
 {
 	if (!port->bridge)
 		return NULL;
@@ -37,7 +37,7 @@ struct net_device *ipqess_port_to_bridge_dev(const struct ipqess_port *port)
 static void ipqess_port_notify_bridge_fdb_flush(const struct ipqess_port *port,
 		u16 vid)
 {
-	struct net_device *brport_dev = ipqess_port_to_bridge_dev(port);
+	struct net_device *brport_dev = ipqess_port_get_bridged_netdev(port);
 	struct switchdev_notifier_fdb_info info = {
 		.vid = vid,
 	};
@@ -277,57 +277,6 @@ static int ipqess_port_do_vlan_add(struct qca8k_priv *priv, int port_index,
 	return ret;
 }
 
-static int ipqess_port_do_vlan_del(struct qca8k_priv *priv, int port_index,
-			const struct switchdev_obj_port_vlan *vlan)
-{
-	u32 reg, mask;
-	int ret, i;
-	bool del;
-	u16 vid = vlan->vid;
-
-	mutex_lock(&priv->reg_mutex);
-	ret = qca8k_vlan_access(priv, QCA8K_VLAN_READ, vid);
-	if (ret < 0)
-		goto done;
-
-	ret = qca8k_read(priv, QCA8K_REG_VTU_FUNC0, &reg);
-	if (ret < 0)
-		goto done;
-	reg &= ~QCA8K_VTU_FUNC0_EG_MODE_PORT_MASK(port_index);
-	reg |= QCA8K_VTU_FUNC0_EG_MODE_PORT_NOT(port_index);
-
-	/* Check if we're the last member to be removed */
-	del = true;
-	for (i = 0; i < IPQESS_SWITCH_MAX_PORTS; i++) {
-		mask = QCA8K_VTU_FUNC0_EG_MODE_PORT_NOT(i);
-
-		if ((reg & mask) != mask) {
-			del = false;
-			break;
-		}
-	}
-
-	if (del) {
-		ret = qca8k_vlan_access(priv, QCA8K_VLAN_PURGE, vid);
-	} else {
-		ret = qca8k_write(priv, QCA8K_REG_VTU_FUNC0, reg);
-		if (ret)
-			goto done;
-		ret = qca8k_vlan_access(priv, QCA8K_VLAN_LOAD, vid);
-	}
-
-
-done:
-
-	mutex_unlock(&priv->reg_mutex);
-
-	if (ret)
-		dev_err(priv->dev,
-				"Failed to delete VLAN from port %d (%d)", port_index, ret);
-
-	return ret;
-}
-
 static int ipqess_port_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
 				u16 vid)
 {
@@ -365,18 +314,13 @@ static int ipqess_port_vlan_rx_kill_vid(struct net_device *dev, __be16 proto,
 				u16 vid)
 {
 	struct ipqess_port *port = netdev_priv(dev);
-	struct switchdev_obj_port_vlan vlan = {
-		.vid = vid,
-		/* This API only allows programming tagged, non-PVID VIDs */
-		.flags = 0,
-	};
 	int err;
 
-	err = ipqess_port_do_vlan_del(port->sw->priv, port->index, &vlan);
+	err = qca8k_vlan_del(port->sw->priv, port->index, vid);
 	if (err)
 		return err;
 
-	err = ipqess_port_do_vlan_del(port->sw->priv, 0, &vlan);
+	err = qca8k_vlan_del(port->sw->priv, 0, vid);
 	if (err)
 		return err;
 
@@ -735,7 +679,7 @@ static int ipqess_port_ageing_time(struct ipqess_port *port,
 static int ipqess_port_switchdev_sync_attrs(struct ipqess_port *port,
 					 struct netlink_ext_ack *extack)
 {
-	struct net_device *brport_dev = ipqess_port_to_bridge_dev(port);
+	struct net_device *brport_dev = ipqess_port_get_bridged_netdev(port);
 	struct net_device *br = ipqess_port_bridge_dev_get(port);
 	int err;
 
@@ -788,7 +732,7 @@ static inline bool ipqess_port_offloads_bridge(struct ipqess_port *port,
 bool ipqess_port_offloads_bridge_port(struct ipqess_port *port,
 						 const struct net_device *netdev)
 {
-	return ipqess_port_to_bridge_dev(port) == netdev;
+	return ipqess_port_get_bridged_netdev(port) == netdev;
 }
 
 static inline bool
@@ -866,6 +810,11 @@ int ipqess_port_bridge_join(struct ipqess_port *port, struct net_device *br,
 		if (i != port_id)
 			port_mask |= BIT(i);
 	}
+	// Also add the CPU port
+	err = regmap_set_bits(priv->regmap,
+			QCA8K_PORT_LOOKUP_CTRL(0),
+			BIT(port_id));
+	port_mask |= BIT(0);
 
 	/* Add all other ports to this ports portvlan mask */
 	err = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port_id),
@@ -873,7 +822,7 @@ int ipqess_port_bridge_join(struct ipqess_port *port, struct net_device *br,
 	if (err)
 		goto out_rollback;
 
-	brport_dev = ipqess_port_to_bridge_dev(port);
+	brport_dev = ipqess_port_get_bridged_netdev(port);
 
 	err = switchdev_bridge_port_offload(brport_dev, port->netdev, port,
 			&ipqess_switchdev_notifier,
@@ -1040,6 +989,80 @@ static int ipqess_port_vlan_check_for_8021q_uppers(struct net_device *netdev,
 	return 0;
 }
 
+static int ipqess_port_host_vlan_del(struct net_device *netdev,
+		const struct switchdev_obj *obj)
+{
+	struct ipqess_port *port = netdev_priv(netdev);
+	struct qca8k_priv *priv = port->sw->priv;
+	struct switchdev_obj_port_vlan *vlan;
+	struct net_device *br = ipqess_port_bridge_dev_get(port);
+
+	/* Do nothing if this is a software bridge */
+	if (!port->bridge)
+		return -EOPNOTSUPP;
+
+	if (br && !br_vlan_enabled(br)) {
+		return 0;
+	}
+
+	vlan = SWITCHDEV_OBJ_PORT_VLAN(obj);
+
+	return qca8k_vlan_del(port->sw->priv, 0, vlan->vid);
+}
+
+static int ipqess_port_vlan_del(struct net_device *netdev,
+		const struct switchdev_obj *obj)
+{
+	struct ipqess_port *port = netdev_priv(netdev);
+	struct qca8k_priv *priv = port->sw->priv;
+	struct switchdev_obj_port_vlan *vlan;
+	struct net_device *br = ipqess_port_bridge_dev_get(port);
+	int ret;
+
+	if (br && !br_vlan_enabled(br)) {
+		return 0;
+	}
+
+	vlan = SWITCHDEV_OBJ_PORT_VLAN(obj);
+
+	ret = qca8k_vlan_del(priv, port->index, vlan->vid);
+
+	if (ret)
+		dev_err(priv->dev, "Failed to delete VLAN from port %d (%d)\n",
+			port->index, ret);
+
+	return ret;
+}
+
+static int ipqess_port_host_vlan_add(struct net_device *netdev,
+		const struct switchdev_obj *obj,
+		struct netlink_ext_ack *extack)
+{
+	struct ipqess_port *port = netdev_priv(netdev);
+	struct switchdev_obj_port_vlan *vlan;
+	struct net_device *br = ipqess_port_bridge_dev_get(port);
+	int ret;
+
+	/* Do nothing is this is a software bridge */
+	if (!port->bridge)
+		return -EOPNOTSUPP;
+
+	if (br && !br_vlan_enabled(br)) {
+		//TODO: do we want this behavior?
+		NL_SET_ERR_MSG_MOD(extack, "skipping configuration of VLAN");
+		return 0;
+	}
+
+	vlan = SWITCHDEV_OBJ_PORT_VLAN(obj);
+
+	vlan->flags &= ~BRIDGE_VLAN_INFO_PVID;
+
+	//TODO: is there a way for userspace to fetch info on CPU port VLANs? If not, is that a problem?
+
+	//Add vid to CPU port
+	return ipqess_port_do_vlan_add(port->sw->priv, 0, vlan, extack);
+}
+
 static int ipqess_port_vlan_add(struct net_device *netdev,
 		const struct switchdev_obj *obj,
 		struct netlink_ext_ack *extack)
@@ -1104,14 +1127,11 @@ int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
 		if (ipqess_port_offloads_bridge_port(port, obj->orig_dev))
 			err = ipqess_port_vlan_add(netdev, obj, extack);
 		else
-			return -EOPNOTSUPP;//TODO
+			err = ipqess_port_host_vlan_add(netdev, obj, extack);
+			return -EOPNOTSUPP;
 		break;
 	case SWITCHDEV_OBJ_ID_MRP:
-		return -EOPNOTSUPP;
-		break;
 	case SWITCHDEV_OBJ_ID_RING_ROLE_MRP:
-		return -EOPNOTSUPP;
-		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -1146,9 +1166,9 @@ int ipqess_port_obj_del(struct net_device *netdev, const void *ctx,
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
 		if (ipqess_port_offloads_bridge_port(port, obj->orig_dev))
-			return -EOPNOTSUPP;//TODO
+			err = ipqess_port_vlan_del(netdev, obj);
 		else
-			return -EOPNOTSUPP;//TODO
+			err = ipqess_port_host_vlan_del(netdev, obj);
 		break;
 	case SWITCHDEV_OBJ_ID_MRP:
 	case SWITCHDEV_OBJ_ID_RING_ROLE_MRP:
