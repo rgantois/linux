@@ -544,6 +544,9 @@ static int ipqess_port_clear_vlan(struct net_device *vdev, int vid, void *arg)
 	return ipqess_port_vlan_rx_kill_vid(arg, proto, vid);
 }
 
+/* Keep the VLAN RX filtering list in sync with the hardware only if VLAN
+ * filtering is enabled.
+ */
 static int ipqess_port_manage_vlan_filtering(struct net_device *netdev,
 				bool vlan_filtering)
 {
@@ -554,6 +557,8 @@ static int ipqess_port_manage_vlan_filtering(struct net_device *netdev,
 
 		err = vlan_for_each(netdev, ipqess_port_restore_vlan, netdev);
 		if (err) {
+			netdev_err(netdev,
+				"Failed to restore all VLAN's successfully, error %d\n", err);
 			vlan_for_each(netdev, ipqess_port_clear_vlan, netdev);
 			netdev->features &= ~NETIF_F_HW_VLAN_CTAG_FILTER;
 			return err;
@@ -910,13 +915,6 @@ void ipqess_port_bridge_leave(struct ipqess_port *port, struct net_device *br)
 }
 
 
-static int ipqess_port_mst_enable(struct ipqess_port *port, bool on,
-			struct netlink_ext_ack *extack)
-{
-	NL_SET_ERR_MSG_MOD(extack, "Hardware does not support MST");
-	return -EINVAL;
-}
-
 int ipqess_port_attr_set(struct net_device *dev, const void *ctx,
 				const struct switchdev_attr *attr,
 				struct netlink_ext_ack *extack)
@@ -947,17 +945,12 @@ int ipqess_port_attr_set(struct net_device *dev, const void *ctx,
 
 		ret = ipqess_port_ageing_time(port, attr->u.ageing_time);
 		break;
-	case SWITCHDEV_ATTR_ID_BRIDGE_MST:
-		if (!ipqess_port_offloads_bridge_dev(port, attr->orig_dev))
-			return -EOPNOTSUPP;
-
-		ret = ipqess_port_mst_enable(port, attr->u.mst, extack);
-		break;
 	case SWITCHDEV_ATTR_ID_PORT_PRE_BRIDGE_FLAGS:
 		if (!ipqess_port_offloads_bridge_port(port, attr->orig_dev))
 			return -EOPNOTSUPP;
 
 		return -EINVAL;
+	case SWITCHDEV_ATTR_ID_BRIDGE_MST:
 	case SWITCHDEV_ATTR_ID_PORT_MST_STATE:
 	case SWITCHDEV_ATTR_ID_PORT_BRIDGE_FLAGS:
 	case SWITCHDEV_ATTR_ID_VLAN_MSTI:
@@ -1098,6 +1091,46 @@ static int ipqess_port_vlan_add(struct net_device *netdev,
 	return err;
 }
 
+static int ipqess_port_host_mdb_del(struct ipqess_port *port,
+	const struct switchdev_obj_port_mdb *mdb)
+{
+	struct qca8k_priv *priv = port->sw->priv;
+	const u8 *addr = mdb->addr;
+	u16 vid = mdb->vid;
+
+	return qca8k_fdb_search_and_del(priv, BIT(0), addr, vid);
+}
+
+static int ipqess_port_host_mdb_add(struct ipqess_port *port,
+	const struct switchdev_obj_port_mdb *mdb)
+{
+	struct qca8k_priv *priv = port->sw->priv;
+	const u8 *addr = mdb->addr;
+	u16 vid = mdb->vid;
+
+	return qca8k_fdb_search_and_insert(priv, BIT(0), addr, vid);
+}
+
+static int ipqess_port_mdb_del(struct ipqess_port *port,
+	const struct switchdev_obj_port_mdb *mdb)
+{
+	struct qca8k_priv *priv = port->sw->priv;
+	const u8 *addr = mdb->addr;
+	u16 vid = mdb->vid;
+
+	return qca8k_fdb_search_and_del(priv, BIT(port->index), addr, vid);
+}
+
+static int ipqess_port_mdb_add(struct ipqess_port *port,
+	const struct switchdev_obj_port_mdb *mdb)
+{
+	struct qca8k_priv *priv = port->sw->priv;
+	const u8 *addr = mdb->addr;
+	u16 vid = mdb->vid;
+
+	return qca8k_fdb_search_and_insert(priv, BIT(port->index), addr, vid);
+}
+
 int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
 				const struct switchdev_obj *obj,
 				struct netlink_ext_ack *extack)
@@ -1110,25 +1143,22 @@ int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
 
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
-		//TODO
 		if (!ipqess_port_offloads_bridge_port(port, obj->orig_dev))
 			return -EOPNOTSUPP;
 
-		//err = ipqess_port_mdb_add(dp, SWITCHDEV_OBJ_PORT_MDB(obj));
+		err = ipqess_port_mdb_add(port, SWITCHDEV_OBJ_PORT_MDB(obj));
 		break;
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
-		//TODO
 		if (!ipqess_port_offloads_bridge_dev(port, obj->orig_dev))
 			return -EOPNOTSUPP;
 
-		//err = ipqess_port_bridge_host_mdb_add(dp, SWITCHDEV_OBJ_PORT_MDB(obj));
+		err = ipqess_port_host_mdb_add(port, SWITCHDEV_OBJ_PORT_MDB(obj));
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
 		if (ipqess_port_offloads_bridge_port(port, obj->orig_dev))
 			err = ipqess_port_vlan_add(netdev, obj, extack);
 		else
 			err = ipqess_port_host_vlan_add(netdev, obj, extack);
-			return -EOPNOTSUPP;
 		break;
 	case SWITCHDEV_OBJ_ID_MRP:
 	case SWITCHDEV_OBJ_ID_RING_ROLE_MRP:
@@ -1151,18 +1181,16 @@ int ipqess_port_obj_del(struct net_device *netdev, const void *ctx,
 
 	switch (obj->id) {
 	case SWITCHDEV_OBJ_ID_PORT_MDB:
-		//TODO
 		if (!ipqess_port_offloads_bridge_port(port, obj->orig_dev))
 			return -EOPNOTSUPP;
 
-		//err = ipqess_port_mdb_del(dp, SWITCHDEV_OBJ_PORT_MDB(obj));
+		err = ipqess_port_mdb_del(port, SWITCHDEV_OBJ_PORT_MDB(obj));
 		break;
 	case SWITCHDEV_OBJ_ID_HOST_MDB:
-		//TODO
 		if (!ipqess_port_offloads_bridge_dev(port, obj->orig_dev))
 			return -EOPNOTSUPP;
 
-		//err = ipqess_port_bridge_host_mdb_del(dp, SWITCHDEV_OBJ_PORT_MDB(obj));
+		err = ipqess_port_host_mdb_del(port, SWITCHDEV_OBJ_PORT_MDB(obj));
 		break;
 	case SWITCHDEV_OBJ_ID_PORT_VLAN:
 		if (ipqess_port_offloads_bridge_port(port, obj->orig_dev))
@@ -2235,7 +2263,7 @@ bool ipqess_port_recognize_netdev(const struct net_device *netdev)
 	return netdev->netdev_ops == &ipqess_port_netdev_ops;
 }
 
-bool ipqess_port_recognize_foreign(const struct net_device *netdev,
+bool ipqess_port_dev_is_foreign(const struct net_device *netdev,
 				const struct net_device *foreign_netdev)
 {
 	struct ipqess_port *port = netdev_priv(netdev);

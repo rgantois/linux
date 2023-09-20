@@ -49,7 +49,7 @@ static int ipqess_port_fdb_event(struct net_device *netdev,
 	/* Also treat FDB entries on foreign interfaces bridged with us as host
 	 * addresses.
 	 */
-	if (ipqess_port_recognize_foreign(netdev, orig_netdev))
+	if (ipqess_port_dev_is_foreign(netdev, orig_netdev))
 		host_addr = true;
 
 	/* Check early that we're not doing work in vain.
@@ -100,7 +100,7 @@ static int ipqess_switchdev_event(struct notifier_block *unused,
 	case SWITCHDEV_FDB_DEL_TO_DEVICE:
 		err = switchdev_handle_fdb_event_to_device(netdev, event, ptr,
 							ipqess_port_recognize_netdev,
-							ipqess_port_recognize_foreign,
+							ipqess_port_dev_is_foreign,
 							ipqess_port_fdb_event);
 		return notifier_from_errno(err);
 	default:
@@ -120,13 +120,13 @@ static int ipqess_switchdev_blocking_event(struct notifier_block *unused,
 	case SWITCHDEV_PORT_OBJ_ADD:
 		err = switchdev_handle_port_obj_add_foreign(netdev, ptr,
 							ipqess_port_recognize_netdev,
-							ipqess_port_recognize_foreign,
+							ipqess_port_dev_is_foreign,
 							ipqess_port_obj_add);
 		return notifier_from_errno(err);
 	case SWITCHDEV_PORT_OBJ_DEL:
 		err = switchdev_handle_port_obj_del_foreign(netdev, ptr,
 							ipqess_port_recognize_netdev,
-							ipqess_port_recognize_foreign,
+							ipqess_port_dev_is_foreign,
 							ipqess_port_obj_del);
 		return notifier_from_errno(err);
 	case SWITCHDEV_PORT_ATTR_SET:

@@ -70,7 +70,7 @@ int ipqess_port_register(struct ipqess_switch *sw,
 		struct device_node *port_node);
 
 bool ipqess_port_recognize_netdev(const struct net_device *netdev);
-bool ipqess_port_recognize_foreign(const struct net_device *netdev,
+bool ipqess_port_dev_is_foreign(const struct net_device *netdev,
 				const struct net_device *foreign_netdev);
 
 int ipqess_port_bridge_join(struct ipqess_port *port, struct net_device *br,

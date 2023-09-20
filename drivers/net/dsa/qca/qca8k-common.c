@@ -242,7 +242,7 @@ void qca8k_fdb_flush(struct qca8k_priv *priv)
 	mutex_unlock(&priv->reg_mutex);
 }
 
-static int qca8k_fdb_search_and_insert(struct qca8k_priv *priv, u8 port_mask,
+int qca8k_fdb_search_and_insert(struct qca8k_priv *priv, u8 port_mask,
 				       const u8 *mac, u16 vid)
 {
 	struct qca8k_fdb fdb = { 0 };
@@ -269,6 +269,9 @@ static int qca8k_fdb_search_and_insert(struct qca8k_priv *priv, u8 port_mask,
 	/* Add port to fdb portmask */
 	fdb.port_mask |= port_mask;
 
+	/* Make entry static */
+	fdb.aging = QCA8K_ATU_STATUS_STATIC;
+
 	qca8k_fdb_write(priv, vid, fdb.port_mask, mac, fdb.aging);
 	ret = qca8k_fdb_access(priv, QCA8K_FDB_LOAD, -1);
 
@@ -277,7 +280,7 @@ exit:
 	return ret;
 }
 
-static int qca8k_fdb_search_and_del(struct qca8k_priv *priv, u8 port_mask,
+int qca8k_fdb_search_and_del(struct qca8k_priv *priv, u8 port_mask,
 				    const u8 *mac, u16 vid)
 {
 	struct qca8k_fdb fdb = { 0 };
@@ -287,6 +290,10 @@ static int qca8k_fdb_search_and_del(struct qca8k_priv *priv, u8 port_mask,
 
 	qca8k_fdb_write(priv, vid, 0, mac, 0);
 	ret = qca8k_fdb_access(priv, QCA8K_FDB_SEARCH, -1);
+	if (ret < 0)
+		goto exit;
+
+	ret = qca8k_fdb_read(priv, &fdb);
 	if (ret < 0)
 		goto exit;
 

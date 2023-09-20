@@ -625,6 +625,10 @@ int qca8k_port_mdb_add(struct dsa_switch *ds, int port,
 int qca8k_port_mdb_del(struct dsa_switch *ds, int port,
 		       const struct switchdev_obj_port_mdb *mdb,
 		       struct dsa_db db);
+int qca8k_fdb_search_and_insert(struct qca8k_priv *priv, u8 port_mask,
+				const u8 *mac, u16 vid);
+int qca8k_fdb_search_and_del(struct qca8k_priv *priv, u8 port_mask,
+				const u8 *mac, u16 vid);
 
 /* Common port mirror function */
 int qca8k_port_mirror_add(struct dsa_switch *ds, int port,
