@@ -7,22 +7,12 @@
 #define IPQESS_SWITCH_AGEING_TIME_MIN 7000
 #define IPQESS_SWITCH_AGEING_TIME_MAX 458745000
 
-struct ipqess_lag {
-	struct net_device *dev;
-	unsigned int id;
-	struct mutex fdb_lock;
-	struct list_head fdbs;
-	refcount_t refcount;
-};
-
 struct ipqess_switch {
 	struct net_device *napi_leader;
 	struct qca8k_priv *priv;
 	struct ipqess_edma *edma;
 	struct ipqess_port *port_list[IPQESS_SWITCH_MAX_PORTS];
 	struct devlink *devlink;
-	//there is a limit to the number of LAGs we can create
-	struct ipqess_lag *lags[QCA8K_NUM_LAGS];
 	bool port0_enabled;
 
 	/* List of MAC addresses that must be forwarded on the cpu port

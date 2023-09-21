@@ -52,14 +52,6 @@ static int ipqess_port_fdb_event(struct net_device *netdev,
 	if (ipqess_port_dev_is_foreign(netdev, orig_netdev))
 		host_addr = true;
 
-	/* Check early that we're not doing work in vain.
-	 * Host addresses on LAG ports still require regular FDB ops,
-	 * since the CPU port isn't in a LAG.
-	 */
-	if (port->lag && !host_addr) {
-		return -EOPNOTSUPP;
-	}
-
 	switchdev_work = kzalloc(sizeof(*switchdev_work), GFP_ATOMIC);
 	if (!switchdev_work)
 		return -ENOMEM;
@@ -159,7 +151,7 @@ static int ipqess_port_changeupper(struct net_device *netdev,
 			if (err == -EOPNOTSUPP) {
 				NL_SET_ERR_MSG_WEAK_MOD(extack,
 							"Offloading not supported");
-				err = 0;
+				err = NOTIFY_DONE;
 			}
 			err = notifier_from_errno(err);
 		} else {
@@ -167,19 +159,10 @@ static int ipqess_port_changeupper(struct net_device *netdev,
 			err = NOTIFY_OK;
 		}
 	} else if (netif_is_lag_master(info->upper_dev)) {
-		if (info->linking) {
-			err = ipqess_port_lag_join(port, info->upper_dev,
-					info->upper_info, extack);
-			if (err == -EOPNOTSUPP) {
-				NL_SET_ERR_MSG_WEAK_MOD(extack,
-						"Offloading not supported");
-				err = 0;
-			}
-			err = notifier_from_errno(err);
-		} else {
-			ipqess_port_lag_leave(port, info->upper_dev);
-			err = NOTIFY_OK;
-		}
+		// LAG offloading is not supported by this driver
+		NL_SET_ERR_MSG_WEAK_MOD(extack,
+				"Offloading not supported");
+		err = NOTIFY_DONE;
 	} else if (is_hsr_master(info->upper_dev)) {
 		if (info->linking) {
 			NL_SET_ERR_MSG_WEAK_MOD(extack,
@@ -188,34 +171,6 @@ static int ipqess_port_changeupper(struct net_device *netdev,
 		} else {
 			err = NOTIFY_OK;
 		}
-	}
-
-	return err;
-}
-
-static int ipqess_port_lag_changeupper(struct net_device *netdev,
-		struct netdev_notifier_changeupper_info *info)
-{
-	struct net_device *lower;
-	struct list_head *iter;
-	int err = NOTIFY_DONE;
-	struct ipqess_port *port;
-
-	if (!netif_is_lag_master(netdev))
-		return err;
-
-	netdev_for_each_lower_dev(netdev, lower, iter) {
-		if (!ipqess_port_recognize_netdev(lower))
-			continue;
-
-		port = netdev_priv(lower);
-		if (!port->lag)
-			/* Software LAG */
-			continue;
-
-		err = ipqess_port_changeupper(lower, info);
-		if (notifier_to_errno(err))
-			break;
 	}
 
 	return err;
@@ -238,8 +193,6 @@ static int ipqess_port_prechangeupper(struct net_device *netdev,
 	//prechangeupper
 	if (netif_is_bridge_master(info->upper_dev) && !info->linking) {
 		brport_dev = ipqess_port_get_bridged_netdev(port);
-	} else if (netif_is_lag_master(info->upper_dev) && !info->linking) {
-		brport_dev = port->bridge ? port->bridge->netdev : NULL;
 	} else {
 		return NOTIFY_DONE;
 	}
@@ -254,34 +207,6 @@ static int ipqess_port_prechangeupper(struct net_device *netdev,
 	ipqess_flush_workqueue();
 
 	return NOTIFY_DONE;
-}
-
-static int ipqess_port_lag_prechangeupper(struct net_device *netdev,
-		struct netdev_notifier_changeupper_info *info)
-{
-	struct net_device *lower;
-	struct list_head *iter;
-	int err = NOTIFY_DONE;
-	struct ipqess_port *port;
-
-	if (!netif_is_lag_master(netdev))
-		return err;
-
-	netdev_for_each_lower_dev(netdev, lower, iter) {
-		if (!ipqess_port_recognize_netdev(lower))
-			continue;
-
-		port = netdev_priv(lower);
-		if (!port->lag)
-			/* Software LAG */
-			continue;
-
-		err = ipqess_port_prechangeupper(lower, info);
-		if (notifier_to_errno(err))
-			break;
-	}
-
-	return err;
 }
 
 static int ipqess_netdevice_event(struct notifier_block *nb,
@@ -299,10 +224,6 @@ static int ipqess_netdevice_event(struct notifier_block *nb,
 		if (notifier_to_errno(err))
 			return err;
 
-		err = ipqess_port_lag_prechangeupper(netdev, ptr);
-		if (notifier_to_errno(err))
-			return err;
-
 		break;
 	 }
 
@@ -312,26 +233,13 @@ static int ipqess_netdevice_event(struct notifier_block *nb,
 		if (notifier_to_errno(err))
 			return err;
 
-		err = ipqess_port_lag_changeupper(netdev, ptr);
-		if (notifier_to_errno(err))
-			return err;
-
 		break;
 	}
 
-	case NETDEV_CHANGELOWERSTATE: {
-		struct netdev_notifier_changelowerstate_info *info = ptr;
-		struct ipqess_port *port;
-		int err = 0;
-
-		if (ipqess_port_recognize_netdev(netdev)) {
-			port = netdev_priv(netdev);
-
-			err = ipqess_port_lag_change(port, info->lower_state_info);
-		}
-
-		return notifier_from_errno(err);
-	}
+	// Handling this is only useful for LAG offloading, which this driver
+	// doesn't support
+	case NETDEV_CHANGELOWERSTATE:
+		return NOTIFY_DONE;
 	case NETDEV_CHANGE:
 	case NETDEV_UP:
 	case NETDEV_GOING_DOWN:

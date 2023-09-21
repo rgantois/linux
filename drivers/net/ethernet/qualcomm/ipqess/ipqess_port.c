@@ -26,9 +26,6 @@ struct net_device *ipqess_port_get_bridged_netdev(const struct ipqess_port *port
 	if (!port->bridge)
 		return NULL;
 
-	if (port->lag)
-		return port->lag->dev;
-
 	return port->netdev;
 }
 
@@ -709,11 +706,7 @@ static void ipqess_port_switchdev_unsync_attrs(struct ipqess_port *port,
 	 * The bridge only emits SWITCHDEV_ATTR_ID_PORT_BRIDGE_FLAGS events
 	 * when the user requests it through netlink or sysfs, but not
 	 * automatically at port join or leave, so we need to handle resetting
-	 * the brport flags ourselves. But we even prefer it that way, because
-	 * otherwise, some setups might never get the notification they need,
-	 * for example, when a port leaves a LAG that offloads the bridge,
-	 * it becomes standalone, but as far as the bridge is concerned, no
-	 * port ever left.
+	 * the brport flags ourselves.
 	 */
 
 	/* Port left the bridge, put in BR_STATE_DISABLED by the bridge layer,
@@ -1320,8 +1313,6 @@ void ipqess_port_switchdev_event_work(struct work_struct *work)
 	case SWITCHDEV_FDB_ADD_TO_DEVICE:
 		if (switchdev_work->host_addr)
 			err = ipqess_cpu_port_fdb_add(port, addr, vid);
-		else if (port->lag)
-			err = -EOPNOTSUPP;
 		else
 			err = qca8k_port_fdb_insert(priv, addr, BIT(port->index), vid);
 		if (err) {
@@ -1336,8 +1327,6 @@ void ipqess_port_switchdev_event_work(struct work_struct *work)
 	case SWITCHDEV_FDB_DEL_TO_DEVICE:
 		if (switchdev_work->host_addr)
 			err = ipqess_cpu_port_fdb_del(port, addr, vid);
-		else if (port->lag)
-			err = -EOPNOTSUPP;
 		else
 			err = qca8k_fdb_del(priv, addr, BIT(port->index), vid);
 		if (err) {
@@ -1381,374 +1370,6 @@ int ipqess_port_check_8021q_upper(struct net_device *netdev,
 	}
 
 	return NOTIFY_DONE;
-}
-/* LAG ops    *************************************************/
-
-static struct net_device *ipqess_port_lag_dev_get(struct ipqess_port *port)
-{
-	return port->lag ? port->lag->dev : NULL;
-}
-
-static bool ipqess_port_offloads_lag(struct ipqess_port *port,
-		struct ipqess_lag *lag)
-{
-	return ipqess_port_lag_dev_get(port) == lag->dev;
-}
-
-static void ipqess_lag_unmap(struct ipqess_switch *sw, struct ipqess_lag *lag)
-{
-	unsigned int id;
-	struct ipqess_lag *other_lag;
-
-	for (id = 1; id <= QCA8K_NUM_LAGS; id++) {
-		other_lag = sw->lags[id - 1];
-		if (other_lag == lag) {
-			sw->lags[id - 1] = NULL;
-			lag->id = 0;
-			break;
-		}
-	}
-}
-
-static void ipqess_lag_map(struct ipqess_switch *sw, struct ipqess_lag *lag)
-{
-	unsigned int id;
-
-	for (id = 1; id <= QCA8K_NUM_LAGS; id++) {
-		if (!sw->lags[id - 1]) {
-			sw->lags[id - 1] = lag;
-			lag->id = id;
-			return;
-		}
-	}
-
-	/* No IDs left, ipqess_lag_by_id will
-	 * return an error when joining the LAG.
-	 * The driver will fall back to a software LAG.
-	 */
-}
-
-static struct ipqess_lag *ipqess_switch_lag_find(struct ipqess_switch *sw,
-		const struct net_device *lag_dev)
-{
-	struct ipqess_port *port;
-	int i;
-
-	for (i = 1; i <= IPQESS_SWITCH_MAX_PORTS; i++) {
-		port = sw->port_list[i - 1];
-		if (port && (ipqess_port_lag_dev_get(port) == lag_dev))
-			return port->lag;
-	}
-
-	return NULL;
-}
-
-static int ipqess_port_lag_create(struct ipqess_port *port,
-			struct net_device *lag_dev)
-{
-	struct ipqess_switch *sw = port->sw;
-	struct ipqess_lag *lag;
-
-	lag = ipqess_switch_lag_find(sw, lag_dev);
-	if (lag) {
-		refcount_inc(&lag->refcount);
-		port->lag = lag;
-		return 0;
-	}
-
-	lag = kzalloc(sizeof(*lag), GFP_KERNEL);
-	if (!lag)
-		return -ENOMEM;
-
-	refcount_set(&lag->refcount, 1);
-	mutex_init(&lag->fdb_lock);
-	INIT_LIST_HEAD(&lag->fdbs);
-	lag->dev = lag_dev;
-	ipqess_lag_map(sw, lag);
-	port->lag = lag;
-
-	return 0;
-}
-
-static void ipqess_port_lag_destroy(struct ipqess_port *port)
-{
-	struct ipqess_lag *lag = port->lag;
-
-	port->lag = NULL;
-	port->lag_tx_enabled = false;
-
-	if (!refcount_dec_and_test(&lag->refcount))
-		return;
-
-	WARN_ON(!list_empty(&lag->fdbs));
-	ipqess_lag_unmap(port->sw, lag);
-	kfree(lag);
-}
-
-static bool ipqess_lag_can_offload(struct ipqess_switch *sw,
-				struct ipqess_lag *lag,
-				struct netdev_lag_upper_info *info,
-				struct netlink_ext_ack *extack)
-{
-	struct ipqess_port *port;
-	int members = 0;
-	int i;
-
-	if (!lag->id)
-		return false;
-
-	for (i = 1; i < IPQESS_SWITCH_MAX_PORTS; i++) {
-		port = sw->port_list[i - 1];
-		// Includes the port joining the LAG
-		if (port && ipqess_port_offloads_lag(port, lag))
-			members++;
-	}
-
-	if (members > QCA8K_NUM_PORTS_FOR_LAG) {
-		NL_SET_ERR_MSG_MOD(extack,
-				"Cannot offload more than 4 LAG ports");
-		return false;
-	}
-
-	if (info->tx_type != NETDEV_LAG_TX_TYPE_HASH) {
-		NL_SET_ERR_MSG_MOD(extack,
-				"Can only offload LAG using hash TX type");
-		return false;
-	}
-
-	if (info->hash_type != NETDEV_LAG_HASH_L2 &&
-		info->hash_type != NETDEV_LAG_HASH_L23) {
-		NL_SET_ERR_MSG_MOD(extack,
-				"Can only offload L2 or L2+L3 TX hash");
-		return false;
-	}
-
-	return true;
-}
-
-static int ipqess_lag_refresh_portmap(struct ipqess_port *port,
-				bool delete)
-{
-	struct ipqess_lag *lag = port->lag;
-	struct ipqess_switch *sw = port->sw;
-	struct qca8k_priv *priv = sw->priv;
-	int port_index = port->index;
-	int ret, id, i;
-	u32 val;
-
-	/* driver LAG IDs are one-based, hardware is zero-based */
-	id = lag->id - 1;
-
-	/* Read current port member */
-	ret = regmap_read(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0, &val);
-	if (ret)
-		return ret;
-
-	/* Shift val from the correct trunk */
-	val >>= QCA8K_REG_GOL_TRUNK_SHIFT(id);
-	val &= QCA8K_REG_GOL_TRUNK_MEMBER_MASK;
-	if (delete)
-		val &= ~BIT(port_index);
-	else
-		val |= BIT(port_index);
-
-	/* Update port member. */
-	ret = regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0,
-				 QCA8K_REG_GOL_TRUNK_MEMBER(id),
-				 val << QCA8K_REG_GOL_TRUNK_SHIFT(id));
-	if (ret)
-		return ret;
-
-	/* With empty portmap disable trunk */
-	ret = regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL0,
-				 QCA8K_REG_GOL_TRUNK_EN(id),
-				 !!val << QCA8K_REG_GOL_TRUNK_EN_SHIFT(id));
-	if (ret)
-		return ret;
-
-	/* Search empty member if adding or port on deleting */
-	for (i = 0; i < QCA8K_NUM_PORTS_FOR_LAG; i++) {
-		ret = regmap_read(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL(id), &val);
-		if (ret)
-			return ret;
-
-		val >>= QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(id, i);
-		val &= QCA8K_REG_GOL_TRUNK_ID_MEM_ID_MASK;
-
-		if (delete) {
-			/* If port flagged to be disabled assume this member is
-			 * empty
-			 */
-			if (!(val & QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_MASK))
-				continue;
-
-			val &= QCA8K_REG_GOL_TRUNK_ID_MEM_ID_PORT_MASK;
-			if (val != port_index)
-				continue;
-		} else {
-			/* If port flagged to be enabled assume this member is
-			 * already set
-			 */
-			if (val & QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_MASK)
-				continue;
-		}
-
-		/* We have found the member to add/remove */
-		break;
-	}
-
-	/* Set port in the correct port mask or disable port if in delete mode */
-	ret = regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL(id),
-				QCA8K_REG_GOL_TRUNK_ID_MEM_ID_PORT(id, i),
-				port_index << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_SHIFT(id, i));
-	if (ret)
-		return ret;
-
-	return regmap_update_bits(priv->regmap, QCA8K_REG_GOL_TRUNK_CTRL(id),
-				QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN(id, i),
-				!delete << QCA8K_REG_GOL_TRUNK_ID_MEM_ID_EN_SHIFT(id, i));
-}
-
-static int ipqess_lag_setup_hash(struct ipqess_switch *sw,
-				struct ipqess_lag *lag,
-				struct netdev_lag_upper_info *info)
-{
-	struct net_device *lag_dev = lag->dev;
-	struct qca8k_priv *priv = sw->priv;
-	bool unique_lag = true;
-	unsigned int id;
-	u32 hash = 0;
-
-	switch (info->hash_type) {
-	case NETDEV_LAG_HASH_L23:
-		hash |= QCA8K_TRUNK_HASH_SIP_EN;
-		hash |= QCA8K_TRUNK_HASH_DIP_EN;
-		fallthrough;
-	case NETDEV_LAG_HASH_L2:
-		hash |= QCA8K_TRUNK_HASH_SA_EN;
-		hash |= QCA8K_TRUNK_HASH_DA_EN;
-		break;
-	default: /* We should NEVER reach this */
-		return -EOPNOTSUPP;
-	}
-
-	/* Check if we are the unique configured LAG */
-	for (id = 1; id <= QCA8K_NUM_LAGS; id++)
-		if (id != lag->id && sw->lags[id - 1]) {
-			unique_lag = false;
-			break;
-		}
-
-	/* Hash Mode is global. Make sure the same Hash Mode
-	 * is set to all the 4 possible lag.
-	 * If we are the unique LAG we can set whatever hash
-	 * mode we want.
-	 * To change hash mode it's needed to remove all LAG
-	 * and change the mode with the latest.
-	 */
-	if (unique_lag) {
-		priv->lag_hash_mode = hash;
-	} else if (priv->lag_hash_mode != hash) {
-		netdev_err(lag_dev,
-			"Error: Mismatched Hash Mode across different lag is not supported\n");
-		return -EOPNOTSUPP;
-	}
-
-	return regmap_update_bits(priv->regmap, QCA8K_TRUNK_HASH_EN_CTRL,
-				QCA8K_TRUNK_HASH_MASK, hash);
-}
-
-void ipqess_port_lag_leave(struct ipqess_port *port,
-		struct net_device *lag_dev)
-{
-	struct net_device *br = ipqess_port_bridge_dev_get(port);
-	struct ipqess_lag *lag;
-	int err;
-
-	if (!port->lag)
-		return;
-
-	/* Port might have been part of a LAG that in turn was
-	 * attached to a bridge.
-	 */
-	if (br)
-		ipqess_port_bridge_leave(port, br);
-
-	err = ipqess_lag_refresh_portmap(port, true);
-	if (err)
-		dev_err(port->sw->priv->dev,
-			"port %d failed to leave LAG with err: %pe\n",
-			port->index, ERR_PTR(err));
-
-	ipqess_port_lag_destroy(port);
-}
-
-int ipqess_port_lag_join(struct ipqess_port *port, struct net_device *lag_dev,
-		struct netdev_lag_upper_info *uinfo,
-		struct netlink_ext_ack *extack)
-{
-	struct net_device *bridge_dev;
-	struct ipqess_lag *lag;
-	int err;
-
-	err = ipqess_port_lag_create(port, lag_dev);
-	if (err)
-		goto err_lag_create;
-
-	lag = port->lag;
-	if (!ipqess_lag_can_offload(port->sw, lag, uinfo, extack)) {
-		err = -EOPNOTSUPP;
-		goto err_lag_join;
-	}
-
-	err = ipqess_lag_setup_hash(port->sw, lag, uinfo);
-	if (err)
-		goto err_lag_join;
-
-	err = ipqess_lag_refresh_portmap(port, false);
-	if (err)
-		goto err_lag_join;
-
-	bridge_dev = netdev_master_upper_dev_get(lag_dev);
-	if (!bridge_dev || !netif_is_bridge_master(bridge_dev))
-		return 0;
-
-	err = ipqess_port_bridge_join(port, bridge_dev, extack);
-	if (err)
-		goto err_bridge_join;
-
-	return 0;
-
-err_bridge_join:
-	ipqess_lag_refresh_portmap(port, true);
-err_lag_join:
-	ipqess_port_lag_destroy(port);
-err_lag_create:
-	dev_err(&port->netdev->dev, "Failed to join lag: errno %d\n", err);
-	return err;
-}
-
-int ipqess_port_lag_change(struct ipqess_port *port,
-			struct netdev_lag_lower_state_info *linfo)
-{
-	bool tx_enabled;
-
-	if (!port->lag)
-		return 0;
-
-	/* On statically configured aggregates (e.g. loadbalance
-	 * without LACP) ports will always be tx_enabled, even if the
-	 * link is down. Thus we require both link_up and tx_enabled
-	 * in order to include it in the tx set.
-	 */
-	tx_enabled = linfo->link_up && linfo->tx_enabled;
-
-	if (tx_enabled == port->lag_tx_enabled)
-		return 0;
-
-	port->lag_tx_enabled = tx_enabled;
-
-	return 0;
 }
 
 /* phylink ops *************************************************/
@@ -2148,7 +1769,6 @@ int ipqess_port_register(struct ipqess_switch *sw,
 	port->qid = port->index - 1;
 	port->sw = sw;
 	port->bridge = NULL;
-	port->lag = NULL;
 
 	of_get_mac_address(port_node, port->mac);
 	if (!is_zero_ether_addr(port->mac)) {

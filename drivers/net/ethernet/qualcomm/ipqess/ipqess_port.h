@@ -28,7 +28,6 @@ struct ipqess_port {
 	struct mii_bus *mii_bus;
 	struct net_device *netdev;
 	struct ipqess_bridge *bridge;
-	struct ipqess_lag *lag;
 	struct devlink_port devlink_port;
 
 	u8       stp_state;
@@ -40,8 +39,6 @@ struct ipqess_port {
 	 * (probe time or under rtnl_lock).
 	 */
 	u8			vlan_filtering:1;
-
-	u8			lag_tx_enabled:1;
 
 	unsigned int		ageing_time;
 
@@ -94,16 +91,6 @@ int ipqess_port_obj_add(struct net_device *netdev, const void *ctx,
 				struct netlink_ext_ack *extack);
 int ipqess_port_obj_del(struct net_device *netdev, const void *ctx,
 				const struct switchdev_obj *obj);
-
-
-int ipqess_port_lag_change(struct ipqess_port *port,
-			struct netdev_lag_lower_state_info *linfo);
-
-int ipqess_port_lag_join(struct ipqess_port *port, struct net_device *lag_dev,
-		struct netdev_lag_upper_info *uinfo,
-		struct netlink_ext_ack *extack);
-void ipqess_port_lag_leave(struct ipqess_port *port,
-		struct net_device *lag_dev);
 
 /* Defined in ipqess_phylink.c */
 int ipqess_phylink_create(struct net_device *ndev);
