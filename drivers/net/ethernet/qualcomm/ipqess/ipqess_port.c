@@ -136,7 +136,7 @@ static void ipqess_port_disable_rt(struct ipqess_port *port)
 
 	if (port->pl)
 		phylink_stop(port->pl);
-	
+
 	if (!port->bridge)
 		ipqess_port_set_state_now(port, BR_STATE_DISABLED, false);
 
@@ -149,6 +149,13 @@ static int ipqess_port_open(struct net_device *netdev)
 	struct ipqess_port *port = netdev_priv(netdev);
 	struct phy_device *phy = netdev->phydev;
 	int ret;
+
+	// Don't allow bringing up a switch port if the EDMA
+	// driver hasn't probed.
+	if (!port->sw->edma) {
+		netdev_err(netdev, "No EDMA device detected!\n");
+		return -ENODEV;
+	}
 
 	ret = ipqess_port_enable_rt(port, phy);
 
@@ -191,7 +198,7 @@ static int ipqess_port_set_mac_address(struct net_device *netdev, void *a)
 		eth_hw_addr_set(netdev, addr->sa_data);
 		return 0;
 	}
-	
+
 	if (!ether_addr_equal(addr->sa_data, netdev->dev_addr)) {
 		err = dev_uc_add(netdev, addr->sa_data);
 		if (err < 0)
@@ -223,7 +230,7 @@ static int ipqess_port_change_mtu(struct net_device *dev, int new_mtu)
 	//or the switch panics.
 	if (port->sw->port0_enabled)
 		qca8k_port_set_status(priv, 0, 0);
-	
+
 	err = qca8k_write(priv, QCA8K_MAX_FRAME_SIZE, new_mtu +
 			ETH_HLEN + ETH_FCS_LEN);
 
@@ -834,7 +841,7 @@ int ipqess_port_bridge_join(struct ipqess_port *port, struct net_device *br,
 		goto out_rollback_unoffload;
 
 	return 0;
-			
+
 out_rollback_unoffload:
 	switchdev_bridge_port_unoffload(brport_dev, port,
 			&ipqess_switchdev_notifier,
@@ -979,7 +986,6 @@ static int ipqess_port_host_vlan_del(struct net_device *netdev,
 		const struct switchdev_obj *obj)
 {
 	struct ipqess_port *port = netdev_priv(netdev);
-	struct qca8k_priv *priv = port->sw->priv;
 	struct switchdev_obj_port_vlan *vlan;
 	struct net_device *br = ipqess_port_bridge_dev_get(port);
 
@@ -1027,7 +1033,6 @@ static int ipqess_port_host_vlan_add(struct net_device *netdev,
 	struct ipqess_port *port = netdev_priv(netdev);
 	struct switchdev_obj_port_vlan *vlan;
 	struct net_device *br = ipqess_port_bridge_dev_get(port);
-	int ret;
 
 	/* Do nothing is this is a software bridge */
 	if (!port->bridge)
@@ -1800,7 +1805,7 @@ int ipqess_port_register(struct ipqess_switch *sw,
 
 	err = gro_cells_init(&port->gcells, netdev);
 	if (err)
-		goto out_free;
+		goto out_devlink;
 
 	err = ipqess_port_phy_setup(netdev);
 	if (err) {
@@ -1838,10 +1843,34 @@ out_phy:
 	port->pl = NULL;
 out_gcells:
 	gro_cells_destroy(&port->gcells);
+out_devlink:
+	devlink_port_unregister(&port->devlink_port);
 out_free:
 	free_percpu(netdev->tstats);
 	free_netdev(netdev);
+	sw->port_list[port->qid] = NULL;
 	return err;
+}
+
+void ipqess_port_unregister(struct ipqess_port *port)
+{
+	struct net_device *netdev = port->netdev;
+
+	unregister_netdev(netdev);
+
+	devlink_port_unregister(&port->devlink_port);
+
+
+	rtnl_lock();
+	phylink_disconnect_phy(port->pl);
+	rtnl_unlock();
+	phylink_destroy(port->pl);
+	port->pl = NULL;
+
+	gro_cells_destroy(&port->gcells);
+
+	free_percpu(netdev->tstats);
+	free_netdev(netdev);
 }
 
 /* Utilities *****************************************/

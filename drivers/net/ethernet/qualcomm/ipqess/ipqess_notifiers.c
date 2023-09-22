@@ -296,3 +296,12 @@ err_netdev_nb:
 
 	return err;
 }
+
+void ipqess_notifiers_unregister(void)
+{
+	unregister_switchdev_blocking_notifier(&ipqess_switchdev_blocking_notifier);
+	unregister_switchdev_notifier(&ipqess_switchdev_notifier);
+	unregister_netdevice_notifier(&ipqess_nb);
+
+	destroy_workqueue(ipqess_owq);
+}

@@ -11,7 +11,6 @@
 #include "ipqess_switch.h"
 #include "ipqess_port.h"
 #include "ipqess_edma.h"
-#include "ipqess_notifiers.h"
 
 static struct regmap_config qca8k_ipqess_regmap_config = {
 	.reg_bits = 32,
@@ -233,10 +232,11 @@ static int ipqess_switch_setup_port(struct ipqess_switch *sw, int port_index)
 	return 0;
 }
 
-static int ipqess_switch_setup(struct ipqess_switch *sw)
+int ipqess_switch_setup(struct ipqess_switch *sw)
 {
 	struct qca8k_priv *priv = sw->priv;
 	int ret,i;
+	u32 reg;
 
 	ipqess_switch_setup_pcs(priv, &priv->pcs_port_0, 0);
 
@@ -306,6 +306,16 @@ static int ipqess_switch_setup(struct ipqess_switch *sw)
 	if (ret < 0)
 		goto devlink_free;
 
+	//set Port0 status
+	reg  = QCA8K_PORT_STATUS_LINK_AUTO;
+	reg |= QCA8K_PORT_STATUS_DUPLEX;
+	reg |= QCA8K_PORT_STATUS_SPEED_1000;
+	reg |= QCA8K_PORT_STATUS_RXFLOW;
+	reg |= QCA8K_PORT_STATUS_TXFLOW;
+	reg |= QCA8K_PORT_STATUS_TXMAC | QCA8K_PORT_STATUS_RXMAC;
+	qca8k_write(priv, QCA8K_REG_PORT_STATUS(0), reg);
+	sw->port0_enabled = true;
+
 	return 0;
 
 devlink_free:
@@ -320,12 +330,12 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	void __iomem *base, *psgmii;
 	struct device_node *np = dev->of_node, *mdio_np, *psgmii_ethphy_np;
-	struct device_node *ports, *port, *edma_node;
+	struct device_node *ports, *port_np;
 	struct ipqess_switch *sw;
 	struct qca8k_priv *priv;
+	struct ipqess_port *port = NULL;
 	int ret;
 	int i;
-	u32 reg;
 
 	sw = devm_kzalloc(dev, sizeof(struct ipqess_switch), GFP_KERNEL);
 	if (!sw) {
@@ -342,16 +352,11 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 	sw->port0_enabled = false;
 	priv->dev = dev;
 	priv->info = &ipqess;
+	priv->ds = NULL;
 
 	ports = of_get_child_by_name(np, "ports");
 	if (!ports) {
 		dev_err(dev, "no 'ports' attribute found\n");
-		return -EINVAL;
-	}
-
-	edma_node = of_parse_phandle(np, "edma-handle", 0);
-	if (!edma_node) {
-		dev_err(dev, "no edma-handle found\n");
 		return -EINVAL;
 	}
 
@@ -428,7 +433,10 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 	mutex_init(&priv->reg_mutex);
 	platform_set_drvdata(pdev, sw);
 
-	ipqess_switch_devlink_alloc(sw);
+	ret = ipqess_switch_devlink_alloc(sw);
+	if (ret)
+		goto out_devlink;
+
 	devlink_register(sw->devlink);
 
 	//register switch front-facing ports
@@ -436,21 +444,18 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 		sw->port_list[i] = NULL;
 	}
 
-	for_each_available_child_of_node(ports, port) {
-		ret = ipqess_port_register(sw, port);
+	for_each_available_child_of_node(ports, port_np) {
+		ret = ipqess_port_register(sw, port_np);
 		if (ret) {
-			pr_err("Failed to register ipqess_edma port! error %d\n", ret);
-			//goto free? !!!!!!!!!!!!!!!
-			return ret;
+			pr_err("Failed to register ipqess port! error %d\n", ret);
+			goto out_ports;
 		}
 	}
 	if (!sw->napi_leader) {
 		pr_err("No switch port registered as napi leader!\n");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out_ports;
 	}
-
-	//register edma (cpu port MAC) driver
-	ipqess_edma_init(sw, edma_node);
 
 	//disable all user ports by default
 	for (i = 1; i < QCA8K_NUM_PORTS; i++) {
@@ -460,48 +465,52 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 		priv->port_enabled_map &= ~BIT(i);
 	}
 
-	ret = ipqess_switch_setup(sw);
-
-	if (ret) {
-		pr_err("Failed to init switch: %d!\n", ret);
-		return ret;
-	}
-
-	//set Port0 status
-	reg  = QCA8K_PORT_STATUS_LINK_AUTO;
-	reg |= QCA8K_PORT_STATUS_DUPLEX;
-	reg |= QCA8K_PORT_STATUS_SPEED_1000;
-	reg |= QCA8K_PORT_STATUS_RXFLOW;
-	reg |= QCA8K_PORT_STATUS_TXFLOW;
-	reg |= QCA8K_PORT_STATUS_TXMAC | QCA8K_PORT_STATUS_RXMAC;
-	qca8k_write(priv, QCA8K_REG_PORT_STATUS(0), reg);
-	sw->port0_enabled = true;
-
-	ret = ipqess_notifiers_register();
-	if (ret) {
-		pr_err("error registering notifiers: %d\n", ret);
-	}
-
 	return 0;
+
+out_ports:
+	for (i = 0; i < IPQESS_SWITCH_MAX_PORTS; i++) {
+		port = sw->port_list[i];
+		if (port)
+			ipqess_port_unregister(port);
+	}
+out_devlink:
+	devlink_free(sw->devlink);
+	pr_err("%s failed with error %d\n", __func__, ret);
+	return ret;
 }
 
 static int
 ipqess_switch_remove(struct platform_device *pdev)
 {
-	struct qca8k_priv *priv = dev_get_drvdata(&pdev->dev);
+	struct ipqess_switch *sw = platform_get_drvdata(pdev);
+	struct qca8k_priv *priv = sw->priv;
+	struct ipqess_port *port = NULL;
 	int i;
 
-	if (!priv)
+	if (!sw)
 		return 0;
 
-	for (i = 0; i < QCA8K_IPQ4019_NUM_PORTS; i++)
-		qca8k_port_set_status(priv, i, 0);
+	// Release EDMA driver
+	if (sw->edma)
+		device_release_driver(&sw->edma->pdev->dev);
 
-	//disable CPU port
-	qca8k_port_set_status(priv, i, 0);
-	priv->port_enabled_map &= ~BIT(0);
+	// Disable all user ports
+	for (i = 1; i < QCA8K_NUM_PORTS; i++) {
+		qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(i),
+			QCA8K_PORT_LOOKUP_STATE_MASK, QCA8K_PORT_LOOKUP_STATE_DISABLED);
+			qca8k_port_set_status(priv, i, 0);
+			priv->port_enabled_map &= ~BIT(i);
+	}
 
-	//TODO: ipqess_edma_uninit(?);
+	// Unregister user ports
+	for (i = 0; i < IPQESS_SWITCH_MAX_PORTS; i++) {
+		port = sw->port_list[i];
+		if (port)
+			ipqess_port_unregister(port);
+	}
+
+	devlink_unregister(sw->devlink);
+	devlink_free(sw->devlink);
 
 	platform_set_drvdata(pdev, NULL);
 

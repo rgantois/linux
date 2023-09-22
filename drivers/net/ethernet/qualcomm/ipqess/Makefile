@@ -3,6 +3,10 @@
 # Makefile for the IPQ ESS driver
 #
 
-obj-$(CONFIG_QCOM_IPQ4019_ESS_EDMA) += ipq_ess.o
+obj-$(CONFIG_QCOM_IPQ4019_ESS_EDMA) += ipq-ess-switch.o
 
-ipq_ess-objs := ipqess_port.o ipqess_phylink.o ipqess_switch.o ipqess_edma.o ipqess_notifiers.o
+# Probe order is important here
+obj-$(CONFIG_QCOM_IPQ4019_ESS_EDMA) += ipq-ess-edma.o
+
+ipq-ess-switch-objs := ipqess_port.o ipqess_phylink.o ipqess_switch.o ipqess_notifiers.o
+ipq-ess-edma-objs := ipqess_edma.o

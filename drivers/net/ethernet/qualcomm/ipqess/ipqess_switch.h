@@ -30,4 +30,6 @@ unsigned int ipqess_switch_fastest_ageing_time(struct ipqess_switch *sw,
 					unsigned int ageing_time);
 int ipqess_set_ageing_time(struct ipqess_switch *sw, unsigned int msecs);
 
+int ipqess_switch_setup(struct ipqess_switch *sw);
+
 #endif

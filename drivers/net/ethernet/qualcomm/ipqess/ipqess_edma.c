@@ -21,6 +21,7 @@
 #include "ipqess_edma.h"
 #include "ipqess_port.h"
 #include "ipqess_switch.h"
+#include "ipqess_notifiers.h"
 
 #define IPQESS_EDMA_RRD_SIZE		16
 #define IPQESS_EDMA_NEXT_IDX(X, Y) (((X) + 1) & ((Y) - 1))
@@ -988,13 +989,20 @@ static void ipqess_edma_reset(struct ipqess_edma *edma)
 	mdelay(10);
 }
 
-int ipqess_edma_init(struct ipqess_switch *sw, struct device_node *np)
+/*
+ * The EDMA driver should always probe after the IPQESS
+ * switch driver. This is ensured by the Makefile order.
+ */
+int ipqess_edma_probe(struct platform_device *pdev)
 {
-	struct platform_device *pdev = of_find_device_by_node(np);
+	struct device_node *np = pdev->dev.of_node;
 	struct net_device *netdev;
 	phy_interface_t phy_mode;
 	struct ipqess_edma *edma;
 	struct ipqess_port *port;
+	struct device_node *sw_np;
+	struct platform_device *sw_pdev;
+	struct ipqess_switch *sw;
 	int i, err = 0;
 	int qid;
 
@@ -1005,7 +1013,6 @@ int ipqess_edma_init(struct ipqess_switch *sw, struct device_node *np)
 	edma->pdev = pdev;
 	spin_lock_init(&edma->stats_lock);
 	platform_set_drvdata(pdev, edma);
-	sw->edma = edma;
 
 	edma->hw_addr = devm_platform_get_and_ioremap_resource(pdev, 0, NULL);
 	if (IS_ERR(edma->hw_addr))
@@ -1039,9 +1046,32 @@ int ipqess_edma_init(struct ipqess_switch *sw, struct device_node *np)
 			"%s:rxq%d", pdev->name, i);
 	}
 
-	edma->sw = sw;
-	sw->edma = edma;
+	//get IPQESS switch driver data
+	sw_np = of_parse_phandle(np, "switch", 0);
+	if (!sw_np) {
+		dev_err(&pdev->dev, "unable to get IPQESS switch phandle\n");
+		of_node_put(sw_np);
+		err = -ENODEV;
+		goto err_clk;
+	}
+
+	sw_pdev = of_find_device_by_node(sw_np);
+	if (!sw_pdev) {
+		dev_err(&pdev->dev, "unable to find IPQESS switch platform device\n");
+		of_node_put(sw_np);
+		err = -ENODEV;
+		goto err_clk;
+	}
+	sw = platform_get_drvdata(sw_pdev);
+	if (!sw) {
+		dev_err(&pdev->dev, "unable to find IPQESS switch driver data\n");
+		err = -EINVAL;
+		goto err_clk;
+	}
+
 	netdev = sw->napi_leader;
+	sw->edma = edma;
+	edma->sw = sw;
 	edma->netdev = netdev;
 	err = ipqess_edma_hw_init(edma);
 
@@ -1087,6 +1117,14 @@ int ipqess_edma_init(struct ipqess_switch *sw, struct device_node *np)
 			port->edma = edma;
 	}
 
+	err = ipqess_switch_setup(sw);
+	if (err)
+		goto err_hw_stop;
+
+	err = ipqess_notifiers_register();
+	if (err)
+		goto err_hw_stop;
+
 	return 0;
 
 err_hw_stop:
@@ -1100,16 +1138,63 @@ err_clk:
 	return err;
 }
 
-int ipqess_edma_uninit(struct ipqess_edma *edma)
+/*
+ * The EDMA driver should always be removed before the
+ * IPQESS switch driver is fully removed. This is why
+ * we manually detach the EDMA device from the IPQESS 
+ * switch driver remove() call.
+ */
+static int ipqess_edma_remove(struct platform_device *pdev)
 {
+	struct ipqess_edma *edma = platform_get_drvdata(pdev);
+
+	if (!edma)
+		return -EINVAL;
+
+	ipqess_notifiers_unregister();
+
 	ipqess_edma_irq_disable(edma);
 	ipqess_edma_hw_stop(edma);
 
 	ipqess_edma_tx_ring_free(edma);
 	ipqess_edma_rx_ring_free(edma);
 
+	/*
+	 * This read prevents a bug where the switch 
+	 * ID register is corrupted at the next probe.
+	 * The source of this behavior is unclear.
+	 */
+	qca8k_read_switch_id(edma->sw->priv);
+	edma->sw->edma = NULL;
+
 	clk_disable_unprepare(edma->edma_clk);
+	platform_set_drvdata(edma->pdev, NULL);
 	kfree(edma);
 
 	return 0;
 }
+
+static const struct of_device_id ipqess_of_mtable[] = {
+	{.compatible = "qcom,ipq4019-ess-edma" },
+	{}
+};
+MODULE_DEVICE_TABLE(of, ipqess_of_mtable);
+
+static struct platform_driver ipqess_edma_driver = {
+	.driver = {
+		.name    = "ipqess-edma",
+		.of_match_table = ipqess_of_mtable,
+	},
+	.probe    = ipqess_edma_probe,
+	.remove   = ipqess_edma_remove,
+};
+
+module_platform_driver(ipqess_edma_driver);
+
+MODULE_AUTHOR("Romain Gantois <romain.gantois@bootlin.com>");
+MODULE_AUTHOR("Qualcomm Atheros Inc");
+MODULE_AUTHOR("John Crispin <john@phrozen.org>");
+MODULE_AUTHOR("Christian Lamparter <chunkeey@gmail.com>");
+MODULE_AUTHOR("Gabor Juhos <j4g8y7@gmail.com>");
+MODULE_AUTHOR("Maxime Chevallier <maxime.chevallier@bootlin.com>");
+MODULE_LICENSE("GPL");

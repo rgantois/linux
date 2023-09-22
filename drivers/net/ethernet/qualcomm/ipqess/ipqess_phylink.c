@@ -495,7 +495,7 @@ static void ipqess_phylink_mac_link_up(struct phylink_config *config,
 	}
 
 	reg |= QCA8K_PORT_STATUS_TXMAC | QCA8K_PORT_STATUS_RXMAC;
-	
+
 	qca8k_write(priv, QCA8K_REG_PORT_STATUS(port->index), reg);
 }
 

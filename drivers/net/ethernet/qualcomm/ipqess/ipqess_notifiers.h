@@ -22,6 +22,7 @@ extern struct notifier_block ipqess_switchdev_notifier;
 extern struct notifier_block ipqess_switchdev_blocking_notifier;
 
 int ipqess_notifiers_register(void);
+void ipqess_notifiers_unregister(void);
 
 void ipqess_flush_workqueue(void);
 
