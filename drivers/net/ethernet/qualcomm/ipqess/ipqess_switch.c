@@ -522,16 +522,16 @@ static const struct of_device_id qca8k_ipqess_of_match[] = {
 	{ /* sentinel */ },
 };
 
-static struct platform_driver qca8k_ipqess_driver = {
+static struct platform_driver qca8k_ipqess_switch_driver = {
 	.probe = ipqess_switch_probe,
 	.remove = ipqess_switch_remove,
 	.driver = {
-		.name = "ipqess",
+		.name = "ipqess-switch",
 		.of_match_table = qca8k_ipqess_of_match,
 	},
 };
 
-module_platform_driver(qca8k_ipqess_driver);
+module_platform_driver(qca8k_ipqess_switch_driver);
 
 MODULE_AUTHOR("Romain Gantois <romain.gantois@bootlin.org>");
 MODULE_AUTHOR("Mathieu Olivari, John Crispin <john@phrozen.org>");
