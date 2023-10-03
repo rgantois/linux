@@ -141,7 +141,10 @@ struct ipqess_edma {
 	char rx_irq_names[IPQESS_EDMA_MAX_TX_QUEUE][IPQESS_EDMA_IRQ_NAME_LEN];
 };
 
-extern netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
+int ipqess_edma_init(struct platform_device *pdev, struct device_node *np);
+void ipqess_edma_uninit(struct ipqess_edma *edma);
+
+netdev_tx_t ipqess_edma_xmit(struct sk_buff *skb, struct net_device *netdev);
 
 /* register definition */
 #define IPQESS_EDMA_REG_MAS_CTRL 0x0

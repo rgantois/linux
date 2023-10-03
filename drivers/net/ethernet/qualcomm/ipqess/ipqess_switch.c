@@ -329,7 +329,7 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	void __iomem *base, *psgmii;
-	struct device_node *np = dev->of_node, *mdio_np, *psgmii_ethphy_np;
+	struct device_node *np = dev->of_node, *mdio_np, *psgmii_ethphy_np, *edma_np;
 	struct device_node *ports, *port_np;
 	struct ipqess_switch *sw;
 	struct qca8k_priv *priv;
@@ -453,14 +453,24 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 		goto out_ports;
 	}
 
-	//disable all user ports by default
-	for (i = 1; i < QCA8K_NUM_PORTS; i++) {
-		qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(i),
-			  QCA8K_PORT_LOOKUP_STATE_MASK,
-			  QCA8K_PORT_LOOKUP_STATE_DISABLED);
-		qca8k_port_set_status(priv, i, 0);
-		priv->port_enabled_map &= ~BIT(i);
+	//get EDMA device node
+	edma_np = of_parse_phandle(np, "edma", 0);
+	if (!edma_np) {
+		dev_err(dev, "Unable to get EDMA controller phandle\n");
+		of_node_put(edma_np);
+		ret = -EINVAL;
+		goto out_ports;
 	}
+
+	if (!ipqess_edma_init(pdev, edma_np)) {
+		dev_err(dev, "Failed to initialize EDMA controller\n");
+		ret = -EINVAL;
+		of_node_put(edma_np);
+		goto out_ports;
+	}
+
+	//disable cpu port
+	ipqess_switch_setup(sw);
 
 	return 0;
 
@@ -488,8 +498,7 @@ ipqess_switch_remove(struct platform_device *pdev)
 		return 0;
 
 	// Release EDMA driver
-	if (sw->edma)
-		device_release_driver(&sw->edma->pdev->dev);
+	ipqess_edma_uninit(sw->edma);
 
 	// Disable all user ports
 	for (i = 1; i < QCA8K_NUM_PORTS; i++) {
@@ -520,16 +529,16 @@ static const struct of_device_id qca8k_ipqess_of_match[] = {
 	{ /* sentinel */ },
 };
 
-static struct platform_driver qca8k_ipqess_switch_driver = {
+static struct platform_driver qca8k_ipqess_driver = {
 	.probe = ipqess_switch_probe,
 	.remove = ipqess_switch_remove,
 	.driver = {
-		.name = "ipqess-switch",
+		.name = "ipqess",
 		.of_match_table = qca8k_ipqess_of_match,
 	},
 };
 
-module_platform_driver(qca8k_ipqess_switch_driver);
+module_platform_driver(qca8k_ipqess_driver);
 
 MODULE_AUTHOR("Romain Gantois <romain.gantois@bootlin.org>");
 MODULE_AUTHOR("Mathieu Olivari, John Crispin <john@phrozen.org>");

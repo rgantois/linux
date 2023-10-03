@@ -1019,16 +1019,13 @@ static void ipqess_edma_reset(struct ipqess_edma *edma)
 /* The EDMA driver should always probe after the IPQESS
  * switch driver. This is ensured by the Makefile order.
  */
-int ipqess_edma_probe(struct platform_device *pdev)
+int ipqess_edma_init(struct platform_device *pdev, struct device_node *np)
 {
-	struct device_node *np = pdev->dev.of_node;
 	struct net_device *netdev;
 	phy_interface_t phy_mode;
 	struct ipqess_edma *edma;
 	struct ipqess_port *port;
-	struct device_node *sw_np;
-	struct platform_device *sw_pdev;
-	struct ipqess_switch *sw;
+	struct ipqess_switch *sw = platform_get_drvdata(pdev);
 	int i, err = 0;
 	int qid;
 
@@ -1036,11 +1033,9 @@ int ipqess_edma_probe(struct platform_device *pdev)
 	if (!edma)
 		return -ENOMEM;
 
-	edma->pdev = pdev;
 	spin_lock_init(&edma->stats_lock);
-	platform_set_drvdata(pdev, edma);
 
-	edma->hw_addr = devm_platform_get_and_ioremap_resource(pdev, 0, NULL);
+	edma->hw_addr = devm_platform_ioremap_resource_byname(pdev, "edma");
 	if (IS_ERR(edma->hw_addr))
 		return PTR_ERR(edma->hw_addr);
 
@@ -1050,11 +1045,11 @@ int ipqess_edma_probe(struct platform_device *pdev)
 		return err;
 	}
 
-	edma->edma_clk = devm_clk_get(&pdev->dev, NULL);
+	edma->edma_clk = devm_clk_get(&pdev->dev, "ess");
 	if (!IS_ERR(edma->edma_clk))
 		clk_prepare_enable(edma->edma_clk);
 
-	edma->edma_rst = devm_reset_control_get(&pdev->dev, NULL);
+	edma->edma_rst = devm_reset_control_get(&pdev->dev, "ess");
 	if (IS_ERR(edma->edma_rst))
 		goto err_clk;
 
@@ -1071,31 +1066,6 @@ int ipqess_edma_probe(struct platform_device *pdev)
 						   i + IPQESS_EDMA_MAX_TX_QUEUE);
 		scnprintf(edma->rx_irq_names[i], sizeof(edma->rx_irq_names[i]),
 			  "%s:rxq%d", pdev->name, i);
-	}
-
-	//get IPQESS switch driver data
-	sw_np = of_parse_phandle(np, "switch", 0);
-	if (!sw_np) {
-		dev_err(&pdev->dev, "unable to get IPQESS switch phandle\n");
-		of_node_put(sw_np);
-		err = -ENODEV;
-		goto err_clk;
-	}
-
-	sw_pdev = of_find_device_by_node(sw_np);
-	if (!sw_pdev) {
-		dev_err(&pdev->dev,
-			"unable to find IPQESS switch platform device\n");
-		of_node_put(sw_np);
-		err = -ENODEV;
-		goto err_clk;
-	}
-	sw = platform_get_drvdata(sw_pdev);
-	if (!sw) {
-		dev_err(&pdev->dev,
-			"unable to find IPQESS switch driver data\n");
-		err = -EINVAL;
-		goto err_clk;
 	}
 
 	netdev = sw->napi_leader;
@@ -1147,10 +1117,6 @@ int ipqess_edma_probe(struct platform_device *pdev)
 			port->edma = edma;
 	}
 
-	err = ipqess_switch_setup(sw);
-	if (err)
-		goto err_hw_stop;
-
 	err = ipqess_notifiers_register();
 	if (err)
 		goto err_hw_stop;
@@ -1168,18 +1134,8 @@ err_clk:
 	return err;
 }
 
-/* The EDMA driver should always be removed before the
- * IPQESS switch driver is fully removed. This is why
- * we manually detach the EDMA device from the IPQESS
- * switch driver remove() call.
- */
-static int ipqess_edma_remove(struct platform_device *pdev)
+void ipqess_edma_uninit(struct ipqess_edma *edma)
 {
-	struct ipqess_edma *edma = platform_get_drvdata(pdev);
-
-	if (!edma)
-		return -EINVAL;
-
 	ipqess_notifiers_unregister();
 
 	ipqess_edma_irq_disable(edma);
@@ -1198,31 +1154,4 @@ static int ipqess_edma_remove(struct platform_device *pdev)
 	clk_disable_unprepare(edma->edma_clk);
 	platform_set_drvdata(edma->pdev, NULL);
 	kfree(edma);
-
-	return 0;
 }
-
-static const struct of_device_id ipqess_of_mtable[] = {
-	{.compatible = "qcom,ipq4019-ess-edma" },
-	{}
-};
-MODULE_DEVICE_TABLE(of, ipqess_of_mtable);
-
-static struct platform_driver ipqess_edma_driver = {
-	.driver = {
-		.name    = "ipqess-edma",
-		.of_match_table = ipqess_of_mtable,
-	},
-	.probe    = ipqess_edma_probe,
-	.remove   = ipqess_edma_remove,
-};
-
-module_platform_driver(ipqess_edma_driver);
-
-MODULE_AUTHOR("Romain Gantois <romain.gantois@bootlin.com>");
-MODULE_AUTHOR("Qualcomm Atheros Inc");
-MODULE_AUTHOR("John Crispin <john@phrozen.org>");
-MODULE_AUTHOR("Christian Lamparter <chunkeey@gmail.com>");
-MODULE_AUTHOR("Gabor Juhos <j4g8y7@gmail.com>");
-MODULE_AUTHOR("Maxime Chevallier <maxime.chevallier@bootlin.com>");
-MODULE_LICENSE("GPL");

@@ -243,10 +243,6 @@
 	pinctrl-names = "default";
 };
 
-&gmac {
-	status = "okay";
-};
-
 &switch {
 	status = "okay";
 };

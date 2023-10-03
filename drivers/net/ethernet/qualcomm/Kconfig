@@ -62,7 +62,7 @@ config QCOM_EMAC
 	  Precision Clock Synchronization Protocol.
 
 config QCOM_IPQ4019_ESS
-	tristate "Qualcomm Atheros IPQ4019 ESS support"
+	tristate "Qualcomm Atheros IPQ4019 Ethernet Switch Subsystem support"
 	depends on (OF && ARCH_QCOM) || COMPILE_TEST
 	select PHYLINK
 	select NET_DSA
@@ -73,8 +73,7 @@ config QCOM_IPQ4019_ESS
 	  Ethernet Switch Subsystem.
 
 	  To compile this driver as a module, choose M here: the
-	  two generated modules will be called ipqess-edma and
-	  ipqess-switch.
+	  module will be called ipqess.
 
 source "drivers/net/ethernet/qualcomm/rmnet/Kconfig"
 
