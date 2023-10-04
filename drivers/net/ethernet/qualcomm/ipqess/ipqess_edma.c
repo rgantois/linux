@@ -1022,27 +1022,24 @@ static void ipqess_edma_reset(struct ipqess_edma *edma)
 int ipqess_edma_init(struct platform_device *pdev, struct device_node *np)
 {
 	struct net_device *netdev;
-	phy_interface_t phy_mode;
 	struct ipqess_edma *edma;
 	struct ipqess_port *port;
 	struct ipqess_switch *sw = platform_get_drvdata(pdev);
 	int i, err = 0;
 	int qid;
 
-	edma = kzalloc(sizeof(*edma), GFP_KERNEL);
+	edma = devm_kzalloc(&pdev->dev, sizeof(*edma), GFP_KERNEL);
 	if (!edma)
 		return -ENOMEM;
+
+	edma->pdev = pdev;
 
 	spin_lock_init(&edma->stats_lock);
 
 	edma->hw_addr = devm_platform_ioremap_resource_byname(pdev, "edma");
-	if (IS_ERR(edma->hw_addr))
-		return PTR_ERR(edma->hw_addr);
-
-	err = of_get_phy_mode(np, &phy_mode);
-	if (err) {
-		dev_err(&pdev->dev, "incorrect phy-mode\n");
-		return err;
+	if (IS_ERR(edma->hw_addr)) {
+		err = PTR_ERR(edma->hw_addr);
+		goto err_edma;
 	}
 
 	edma->edma_clk = devm_clk_get(&pdev->dev, "ess");
@@ -1050,8 +1047,10 @@ int ipqess_edma_init(struct platform_device *pdev, struct device_node *np)
 		clk_prepare_enable(edma->edma_clk);
 
 	edma->edma_rst = devm_reset_control_get(&pdev->dev, "ess");
-	if (IS_ERR(edma->edma_rst))
+	if (IS_ERR(edma->edma_rst)) {
+		err = PTR_ERR(edma->edma_rst);
 		goto err_clk;
+	}
 
 	ipqess_edma_reset(edma);
 
@@ -1072,8 +1071,8 @@ int ipqess_edma_init(struct platform_device *pdev, struct device_node *np)
 	sw->edma = edma;
 	edma->sw = sw;
 	edma->netdev = netdev;
-	err = ipqess_edma_hw_init(edma);
 
+	err = ipqess_edma_hw_init(edma);
 	if (err)
 		goto err_clk;
 
@@ -1123,6 +1122,8 @@ int ipqess_edma_init(struct platform_device *pdev, struct device_node *np)
 
 	return 0;
 
+err_edma:
+	devm_kfree(&pdev->dev, edma);
 err_hw_stop:
 	ipqess_edma_hw_stop(edma);
 
@@ -1152,6 +1153,4 @@ void ipqess_edma_uninit(struct ipqess_edma *edma)
 	edma->sw->edma = NULL;
 
 	clk_disable_unprepare(edma->edma_clk);
-	platform_set_drvdata(edma->pdev, NULL);
-	kfree(edma);
 }

@@ -278,7 +278,6 @@ qca8k_test_port_for_errors(struct qca8k_priv *priv, struct phy_device *phy,
 		qca8k_phy_loopback_on_off(priv, phy, port, 0);
 	}
 
-	put_device(&phy->mdio.dev);
 	if (test_phase == 2) {
 		tests_result <<= 1;
 		if (res)
@@ -328,8 +327,11 @@ qca8k_do_dsa_sw_ports_self_test(struct qca8k_priv *priv, int parallel_test)
 										  reg,
 										  test_phase,
 										  tests_result);
+
 					if (!parallel_test && test_phase == 1)
 						qca8k_start_phy_pkt_gen(phy);
+
+					put_device(&phy->mdio.dev);
 				}
 			}
 		}
@@ -406,7 +408,7 @@ ipqess_psgmii_configure(struct qca8k_priv *priv)
 }
 
 static void
-ipqess_phylink_ipqess_edma_config(struct phylink_config *config,
+ipqess_phylink_mac_config(struct phylink_config *config,
 				  unsigned int mode,
 				  const struct phylink_link_state *state)
 {
@@ -450,7 +452,7 @@ ipqess_phylink_ipqess_edma_config(struct phylink_config *config,
 }
 
 static void
-ipqess_phylink_ipqess_edma_link_down(struct phylink_config *config,
+ipqess_phylink_mac_link_down(struct phylink_config *config,
 				     unsigned int mode,
 				     phy_interface_t interface)
 {
@@ -512,8 +514,8 @@ static void ipqess_phylink_mac_link_up(struct phylink_config *config,
 
 static const struct phylink_mac_ops ipqess_phylink_mac_ops = {
 	.validate = phylink_generic_validate,
-	.mac_config = ipqess_phylink_ipqess_edma_config,
-	.mac_link_down = ipqess_phylink_ipqess_edma_link_down,
+	.mac_config = ipqess_phylink_mac_config,
+	.mac_link_down = ipqess_phylink_mac_link_down,
 	.mac_link_up = ipqess_phylink_mac_link_up,
 };
 

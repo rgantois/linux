@@ -329,7 +329,7 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	void __iomem *base, *psgmii;
-	struct device_node *np = dev->of_node, *mdio_np, *psgmii_ethphy_np, *edma_np;
+	struct device_node *np = dev->of_node, *mdio_np, *psgmii_ethphy_np;
 	struct device_node *ports, *port_np;
 	struct ipqess_switch *sw;
 	struct qca8k_priv *priv;
@@ -420,15 +420,15 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&sw->fdbs);
 	INIT_LIST_HEAD(&sw->mdbs);
 
+	mutex_init(&priv->reg_mutex);
+	platform_set_drvdata(pdev, sw);
+
 	/* Check the detected switch id */
 	ret = qca8k_read_switch_id(sw->priv);
 	if (ret) {
-		dev_err(dev, "failed to read switch id\n");
+		dev_err(dev, "Failed to read switch id! error %d\n", ret);
 		return ret;
 	}
-
-	mutex_init(&priv->reg_mutex);
-	platform_set_drvdata(pdev, sw);
 
 	ret = ipqess_switch_devlink_alloc(sw);
 	if (ret)
@@ -453,19 +453,9 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 		goto out_ports;
 	}
 
-	//get EDMA device node
-	edma_np = of_parse_phandle(np, "edma", 0);
-	if (!edma_np) {
-		dev_err(dev, "Unable to get EDMA controller phandle\n");
-		of_node_put(edma_np);
-		ret = -EINVAL;
-		goto out_ports;
-	}
-
-	if (!ipqess_edma_init(pdev, edma_np)) {
-		dev_err(dev, "Failed to initialize EDMA controller\n");
-		ret = -EINVAL;
-		of_node_put(edma_np);
+	ret = ipqess_edma_init(pdev, np);
+	if (ret) {
+		dev_err(dev, "Failed to initialize EDMA controller! error %d\n", ret);
 		goto out_ports;
 	}
 

@@ -1739,7 +1739,7 @@ int ipqess_port_register(struct ipqess_switch *sw,
 	}
 
 	name = of_get_property(port_node, "label", NULL);
-	if (name) {
+	if (!name) {
 		name = "eth%d";
 		assign_type = NET_NAME_ENUM;
 	} else {
@@ -1754,7 +1754,7 @@ int ipqess_port_register(struct ipqess_switch *sw,
 
 	netdev = alloc_netdev_mqs(sizeof(struct ipqess_port), name, assign_type,
 				  ether_setup, num_queues, num_queues);
-	if (netdev)
+	if (!netdev)
 		return -ENOMEM;
 
 	if (!sw->napi_leader)
@@ -1781,7 +1781,6 @@ int ipqess_port_register(struct ipqess_switch *sw,
 	SET_NETDEV_DEV(netdev, priv->dev);
 	SET_NETDEV_DEVLINK_PORT(netdev, &port->devlink_port);
 	netdev->dev.of_node = port->dn;
-	//netdev->vlan_features = mac->vlan_features
 
 	netdev->rtnl_link_ops = &ipqess_port_link_ops;
 	netdev->ethtool_ops = &ipqess_port_ethtool_ops;
@@ -1821,13 +1820,8 @@ int ipqess_port_register(struct ipqess_switch *sw,
 
 	rtnl_unlock();
 
-	if (err)
-		goto out_unregister;
-
 	return 0;
 
-out_unregister:
-	unregister_netdev(netdev);
 out_phy:
 	rtnl_lock();
 	phylink_disconnect_phy(port->pl);
