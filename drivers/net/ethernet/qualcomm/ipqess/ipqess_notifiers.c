@@ -25,7 +25,7 @@ void ipqess_flush_workqueue(void)
 	flush_workqueue(ipqess_owq);
 }
 
-/* switchdev *********************************************/
+/* switchdev */
 
 static int ipqess_port_fdb_event(struct net_device *netdev,
 				 struct net_device *orig_netdev,
@@ -131,7 +131,7 @@ static int ipqess_switchdev_blocking_event(struct notifier_block *unused,
 	return NOTIFY_DONE;
 }
 
-/* netdevice *********************************************/
+/* netdevice */
 
 static int ipqess_port_changeupper(struct net_device *netdev,
 				   struct netdev_notifier_changeupper_info *info)
@@ -179,8 +179,8 @@ static int ipqess_port_changeupper(struct net_device *netdev,
 static int ipqess_port_prechangeupper(struct net_device *netdev,
 				      struct netdev_notifier_changeupper_info *info)
 {
-	struct net_device *brport_dev;
 	struct ipqess_port *port = netdev_priv(netdev);
+	struct net_device *brport_dev;
 	int err;
 
 	/* sanity check */
@@ -211,8 +211,8 @@ static int ipqess_port_prechangeupper(struct net_device *netdev,
 static int ipqess_netdevice_event(struct notifier_block *nb,
 				  unsigned long event, void *ptr)
 {
-	int err;
 	struct net_device *netdev = netdev_notifier_info_to_dev(ptr);
+	int err;
 
 	if (!ipqess_port_recognize_netdev(netdev))
 		return NOTIFY_DONE;
@@ -235,7 +235,8 @@ static int ipqess_netdevice_event(struct notifier_block *nb,
 	}
 
 	/* Handling this is only useful for LAG offloading, which this driver
-	   doesn't support */
+	 * doesn't support
+	 */
 	case NETDEV_CHANGELOWERSTATE:
 		return NOTIFY_DONE;
 	case NETDEV_CHANGE:
@@ -262,7 +263,6 @@ static struct notifier_block ipqess_nb __read_mostly = {
 
 int ipqess_notifiers_register(void)
 {
-	struct notifier_block *nb;
 	int err;
 
 	ipqess_owq = alloc_ordered_workqueue("ipqess_ordered",
@@ -278,8 +278,7 @@ int ipqess_notifiers_register(void)
 	if (err)
 		goto err_switchdev_nb;
 
-	nb = &ipqess_switchdev_blocking_notifier;
-	err = register_switchdev_blocking_notifier(nb);
+	err = register_switchdev_blocking_notifier(&ipqess_switchdev_blocking_notifier);
 	if (err)
 		goto err_switchdev_blocking_nb;
 

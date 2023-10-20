@@ -81,6 +81,18 @@ int qca8k_rmw(struct qca8k_priv *priv, u32 reg, u32 mask, u32 write_val)
 }
 EXPORT_SYMBOL(qca8k_rmw);
 
+int qca8k_set_bits(struct qca8k_priv *priv, u32 reg, u32 bits)
+{
+	return regmap_set_bits(priv->regmap, reg, bits);
+}
+EXPORT_SYMBOL(qca8k_set_bits);
+
+int qca8k_clear_bits(struct qca8k_priv *priv, u32 reg, u32 bits)
+{
+	return regmap_clear_bits(priv->regmap, reg, bits);
+}
+EXPORT_SYMBOL(qca8k_clear_bits);
+
 static const struct regmap_range qca8k_readable_ranges[] = {
 	regmap_reg_range(0x0000, 0x00e4), /* Global control */
 	regmap_reg_range(0x0100, 0x0168), /* EEE control */

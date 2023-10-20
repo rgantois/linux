@@ -1018,10 +1018,10 @@ static void ipqess_edma_reset(struct ipqess_edma *edma)
 
 int ipqess_edma_init(struct platform_device *pdev, struct device_node *np)
 {
+	struct ipqess_switch *sw = platform_get_drvdata(pdev);
 	struct net_device *netdev;
 	struct ipqess_edma *edma;
 	struct ipqess_port *port;
-	struct ipqess_switch *sw = platform_get_drvdata(pdev);
 	int i, err = 0;
 	int qid;
 

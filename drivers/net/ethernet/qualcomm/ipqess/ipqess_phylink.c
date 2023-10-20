@@ -16,6 +16,46 @@
 
 #include "ipqess_port.h"
 
+/* Partially documented nonstandard MII registers
+ * for the psgmii node on the IPQ4019 MDIO bus.
+ */
+
+/* Reset control register */
+#define PSGMII_RSTCTRL 0x0
+#define PSGMII_RSTCTRL_RST BIT(6)
+#define PSGMII_RSTCTRL_RX20 BIT(2) /* Fix/release RX 20 bit */
+/* Clock and data recovery control register */
+#define PSGMII_CDRCTRL 0x1a
+#define PSGMII_CDRCTRL_RELEASE BIT(12)
+/* VCO PLL calibration */
+#define PSGMII_VCO_CALIB_CTRL  0x28
+#define PSGMII_VCO_CALIB_READY BIT(0)
+
+/* Delays and timeouts */
+
+#define PSGMII_WAIT_AFTER_CALIB   50
+#define PSGMII_WAIT_AFTER_RELEASE 200
+#define PSGMII_VCO_CALIB_INTERVAL 1000000
+#define PSGMII_VCO_CALIB_TIMEOUT  10000
+
+/* Calibration data */
+
+struct psgmii_port_data {
+	struct list_head list;
+	struct phy_device *phy;
+	int id;
+
+	/* calibration test results */
+	u32 test_ok;
+	u32 tx_loss;
+	u32 rx_loss;
+	u32 tx_errors;
+	u32 rx_errors;
+};
+
+LIST_HEAD(calib);
+
+
 static int psgmii_vco_calibrate(struct qca8k_priv *priv)
 {
 	int val, ret;
@@ -27,28 +67,34 @@ static int psgmii_vco_calibrate(struct qca8k_priv *priv)
 	}
 
 	/* Fix PSGMII RX 20bit */
-	ret = phy_write(priv->psgmii_ethphy, MII_BMCR, 0x5b);
+	ret = phy_clear_bits(priv->psgmii_ethphy, PSGMII_RSTCTRL,
+			     PSGMII_RSTCTRL_RX20);
 	/* Reset PHY PSGMII */
-	ret = phy_write(priv->psgmii_ethphy, MII_BMCR, 0x1b);
+	ret = phy_clear_bits(priv->psgmii_ethphy, PSGMII_RSTCTRL,
+			     PSGMII_RSTCTRL_RST);
 	/* Release PHY PSGMII reset */
-	ret = phy_write(priv->psgmii_ethphy, MII_BMCR, 0x5b);
+	ret = phy_set_bits(priv->psgmii_ethphy, PSGMII_RSTCTRL,
+			   PSGMII_RSTCTRL_RST);
 
 	/* Poll for VCO PLL calibration finish - Malibu(QCA8075) */
 	ret = phy_read_mmd_poll_timeout(priv->psgmii_ethphy,
 					MDIO_MMD_PMAPMD,
-					0x28, val,
-					(val & BIT(0)),
-					10000, 1000000,
+					PSGMII_VCO_CALIB_CTRL,
+					val,
+					val & PSGMII_VCO_CALIB_READY,
+					PSGMII_VCO_CALIB_INTERVAL,
+					PSGMII_VCO_CALIB_TIMEOUT,
 					false);
 	if (ret) {
 		dev_err(priv->dev,
 			"QCA807x PSGMII VCO calibration PLL not ready\n");
 		return ret;
 	}
-	mdelay(50);
+	mdelay(PSGMII_WAIT_AFTER_CALIB);
 
 	/* Freeze PSGMII RX CDR */
-	ret = phy_write(priv->psgmii_ethphy, MII_RESV2, 0x2230);
+	ret = phy_clear_bits(priv->psgmii_ethphy, PSGMII_CDRCTRL,
+			     PSGMII_CDRCTRL_RELEASE);
 
 	/* Start PSGMIIPHY VCO PLL calibration */
 	ret = regmap_set_bits(priv->psgmii,
@@ -60,136 +106,99 @@ static int psgmii_vco_calibrate(struct qca8k_priv *priv)
 				       PSGMIIPHY_VCO_CALIBRATION_CONTROL_REGISTER_2,
 				       val,
 				       val & PSGMIIPHY_REG_PLL_VCO_CALIB_READY,
-				       10000, 1000000);
+				       PSGMII_VCO_CALIB_INTERVAL,
+				       PSGMII_VCO_CALIB_TIMEOUT);
 	if (ret) {
 		dev_err(priv->dev,
 			"IPQ PSGMIIPHY VCO calibration PLL not ready\n");
 		return ret;
 	}
-	mdelay(50);
+	mdelay(PSGMII_WAIT_AFTER_CALIB);
 
 	/* Release PSGMII RX CDR */
-	ret = phy_write(priv->psgmii_ethphy, MII_RESV2, 0x3230);
+	ret = phy_set_bits(priv->psgmii_ethphy, PSGMII_CDRCTRL,
+			   PSGMII_CDRCTRL_RELEASE);
 	/* Release PSGMII RX 20bit */
-	ret = phy_write(priv->psgmii_ethphy, MII_BMCR, 0x5f);
-	mdelay(200);
+	ret = phy_set_bits(priv->psgmii_ethphy, PSGMII_RSTCTRL,
+			   PSGMII_RSTCTRL_RX20);
+	mdelay(PSGMII_WAIT_AFTER_RELEASE);
 
 	return ret;
 }
 
-static void
-ipqess_switch_port_loopback_on_off(struct qca8k_priv *priv, int port, int on)
-{
-	u32 val = QCA8K_PORT_LOOKUP_LOOPBACK_EN;
-
-	if (on == 0)
-		val = 0;
-
-	qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port),
-		  QCA8K_PORT_LOOKUP_LOOPBACK_EN, val);
-}
-
+//!!!!!!!!!!!!!!!!REPLACE WITH PHY_READ_POLL_TIMEOUT
 static int
 qca8k_wait_for_phy_link_state(struct phy_device *phy, int need_status)
 {
-	int a;
 	u16 status;
+	int a;
 
-	for (a = 0; a < 100; a++) {
+	for (a = 0; a < MII_QCA8075_SSTATUS_RETRIES; a++) {
 		status = phy_read(phy, MII_QCA8075_SSTATUS);
 		status &= QCA8075_PHY_SPEC_STATUS_LINK;
 		status = !!status;
 		if (status == need_status)
 			return 0;
-		mdelay(8);
+		mdelay(MII_QCA8075_SSTATUS_WAIT);
 	}
 
-	return -1;
+	return -EINVAL;
 }
 
 static void
-qca8k_phy_loopback_on_off(struct qca8k_priv *priv, struct phy_device *phy,
-			  int sw_port, int on)
+psgmii_phy_loopback_enable(struct qca8k_priv *priv, struct phy_device *phy,
+		       	   int sw_port)
 {
-	if (on) {
-		phy_write(phy, MII_BMCR, BMCR_ANENABLE | BMCR_RESET);
-		phy_modify(phy, MII_BMCR, BMCR_PDOWN, BMCR_PDOWN);
-		qca8k_wait_for_phy_link_state(phy, 0);
-		qca8k_write(priv, QCA8K_REG_PORT_STATUS(sw_port), 0);
-		phy_write(phy, MII_BMCR,
-			  BMCR_SPEED1000
-			  | BMCR_FULLDPLX
-			  | BMCR_LOOPBACK);
-		qca8k_wait_for_phy_link_state(phy, 1);
-		qca8k_write(priv, QCA8K_REG_PORT_STATUS(sw_port),
-			    QCA8K_PORT_STATUS_SPEED_1000
-			    | QCA8K_PORT_STATUS_TXMAC
-			    | QCA8K_PORT_STATUS_RXMAC
-			    | QCA8K_PORT_STATUS_DUPLEX);
-		qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(sw_port),
-			  QCA8K_PORT_LOOKUP_STATE_FORWARD,
-			  QCA8K_PORT_LOOKUP_STATE_FORWARD);
-	} else { /* off */
-		qca8k_write(priv, QCA8K_REG_PORT_STATUS(sw_port), 0);
-		qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(sw_port),
-			  QCA8K_PORT_LOOKUP_STATE_DISABLED,
-			  QCA8K_PORT_LOOKUP_STATE_DISABLED);
-		phy_write(phy, MII_BMCR,
-			  BMCR_SPEED1000 | BMCR_ANENABLE | BMCR_RESET);
-		/* turn off the power of the phys - so that unused
-		 * ports do not raise links
-		 */
-		phy_modify(phy, MII_BMCR, BMCR_PDOWN, BMCR_PDOWN);
-	}
+	phy_write(phy, MII_BMCR, BMCR_ANENABLE | BMCR_RESET);
+	phy_modify(phy, MII_BMCR, BMCR_PDOWN, BMCR_PDOWN);
+	qca8k_wait_for_phy_link_state(phy, 0);
+	qca8k_write(priv, QCA8K_REG_PORT_STATUS(sw_port), 0);
+	phy_write(phy, MII_BMCR,
+		  BMCR_SPEED1000
+		  | BMCR_FULLDPLX
+		  | BMCR_LOOPBACK);
+	qca8k_wait_for_phy_link_state(phy, 1);
+	qca8k_write(priv, QCA8K_REG_PORT_STATUS(sw_port),
+		    QCA8K_PORT_STATUS_SPEED_1000
+		    | QCA8K_PORT_STATUS_TXMAC
+		    | QCA8K_PORT_STATUS_RXMAC
+		    | QCA8K_PORT_STATUS_DUPLEX);
+	qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(sw_port),
+		  QCA8K_PORT_LOOKUP_STATE_FORWARD,
+		  QCA8K_PORT_LOOKUP_STATE_FORWARD);
 }
 
 static void
-qca8k_phy_pkt_gen_prep(struct qca8k_priv *priv, struct phy_device *phy,
-		       int pkts_num, int on)
+psgmii_phy_loopback_disable(struct qca8k_priv *priv, struct phy_device *phy,
+			    int sw_port)
 {
-	if (on) {
-		/* enable CRC checker and packets counters */
-		phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_CRC_AND_PKTS_COUNT, 0);
-		phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_CRC_AND_PKTS_COUNT,
-			      QCA8075_MMD7_CNT_FRAME_CHK_EN
-			      | QCA8075_MMD7_CNT_SELFCLR);
-		qca8k_wait_for_phy_link_state(phy, 1);
-		/* packet number */
-		phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_PKT_NUMB,
-			      pkts_num);
-		/* pkt size - 1504 bytes + 20 bytes */
-		phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_PKT_SIZE,
-			      1504);
-	} else { /* off */
-		/* packet number */
-		phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_PKT_NUMB, 0);
-		/* disable CRC checker and packet counter */
-		phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_CRC_AND_PKTS_COUNT, 0);
-		/* disable traffic gen */
-		phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_CTRL, 0);
-	}
+	qca8k_write(priv, QCA8K_REG_PORT_STATUS(sw_port), 0);
+	qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(sw_port),
+		  QCA8K_PORT_LOOKUP_STATE_DISABLED,
+		  QCA8K_PORT_LOOKUP_STATE_DISABLED);
+	phy_write(phy, MII_BMCR,
+		  BMCR_SPEED1000 | BMCR_ANENABLE | BMCR_RESET);
+	/* turn off the power of the phys - so that unused
+	 * ports do not raise links
+	 */
+	phy_modify(phy, MII_BMCR, BMCR_PDOWN, BMCR_PDOWN);
 }
+
 
 static void
 qca8k_wait_for_phy_pkt_gen_fin(struct qca8k_priv *priv, struct phy_device *phy)
 {
 	int val;
-	/* wait for all traffic end: 4096(pkt num)*1524(size)*8ns(125MHz)=49938us */
+	/* wait for all traffic to end:
+	 * 4096(pkt num)*1524(size)*8ns(125MHz)=49938us
+	 */
 	phy_read_mmd_poll_timeout(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_CTRL,
 				  val, !(val & QCA8075_MMD7_PKT_GEN_INPROGR),
 				  50000, 1000000, true);
 }
 
-static void
-qca8k_start_phy_pkt_gen(struct phy_device *phy)
-{
-	/* start traffic gen */
-	phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_CTRL,
-		      QCA8075_MMD7_PKT_GEN_START | QCA8075_MMD7_PKT_GEN_INPROGR);
-}
-
 static int
-qca8k_start_all_phys_pkt_gens(struct qca8k_priv *priv)
+psgmii_start_parallel_pkt_gen(struct qca8k_priv *priv)
 {
 	struct phy_device *phy;
 
@@ -202,17 +211,20 @@ qca8k_start_all_phys_pkt_gens(struct qca8k_priv *priv)
 		return -ENODEV;
 	}
 
-	qca8k_start_phy_pkt_gen(phy);
+	/* start packet generation */
+	phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_CTRL,
+		      QCA8075_MMD7_PKT_GEN_START | QCA8075_MMD7_PKT_GEN_INPROGR);
 
 	phy_device_free(phy);
 	return 0;
 }
 
-static int
-qca8k_get_phy_pkt_gen_test_result(struct phy_device *phy, int pkts_num)
+static void
+qca8k_get_phy_pkt_gen_test_result(struct psgmii_port_data *port_data)
 {
-	u32 tx_ok, tx_error;
-	u32 rx_ok, rx_error;
+	struct phy_device *phy = port_data->phy;
+	u32 tx_ok, tx_errors;
+	u32 rx_ok, rx_errors;
 	u32 tx_ok_high16;
 	u32 rx_ok_high16;
 	u32 tx_all_ok, rx_all_ok;
@@ -221,167 +233,285 @@ qca8k_get_phy_pkt_gen_test_result(struct phy_device *phy, int pkts_num)
 	tx_ok = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_EG_FRAME_RECV_CNT_LO);
 	tx_ok_high16 = phy_read_mmd(phy, MDIO_MMD_AN,
 				    QCA8075_MMD7_EG_FRAME_RECV_CNT_HI);
-	tx_error = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_EG_FRAME_ERR_CNT);
+	tx_errors = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_EG_FRAME_ERR_CNT);
 	rx_ok = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_IG_FRAME_RECV_CNT_LO);
 	rx_ok_high16 = phy_read_mmd(phy, MDIO_MMD_AN,
 				    QCA8075_MMD7_IG_FRAME_RECV_CNT_HI);
-	rx_error = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_IG_FRAME_ERR_CNT);
+	rx_errors = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_IG_FRAME_ERR_CNT);
 	tx_all_ok = tx_ok + (tx_ok_high16 << 16);
 	rx_all_ok = rx_ok + (rx_ok_high16 << 16);
 
-	if (tx_all_ok < pkts_num)
-		return -1;
-	if (rx_all_ok < pkts_num)
-		return -2;
-	if (tx_error)
-		return -3;
-	if (rx_error)
-		return -4;
-	return 0; /* test is ok */
+	port_data->tx_loss = QCA8075_PKT_GEN_PKTS_COUNT - tx_all_ok;
+	port_data->rx_loss = QCA8075_PKT_GEN_PKTS_COUNT - rx_all_ok;
+	port_data->tx_errors = tx_errors;
+	port_data->rx_errors = rx_errors;
+	port_data->test_ok = !(port_data->tx_loss | port_data->rx_loss | tx_errors | rx_errors);
 }
 
-static
-void qca8k_phy_broadcast_write_on_off(struct qca8k_priv *priv,
-				      struct phy_device *phy, int on)
+void psgmii_port_cleanup_test(struct qca8k_priv *priv,
+			      struct psgmii_port_data *port_data)
 {
-	u32 val;
+	struct phy_device *phy = port_data->phy;
+	int port_id = port_data->id;
 
-	val = phy_read_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_MDIO_BRDCST_WRITE);
+	/* set packet count to 0 */
+	phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_PKT_NUMB, 0);
 
-	if (on == 0)
-		val &= ~QCA8075_MMD7_MDIO_BRDCST_WRITE_EN;
-	else
-		val |= QCA8075_MMD7_MDIO_BRDCST_WRITE_EN;
+	/* disable CRC checker and packet counter */
+	phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_CRC_AND_PKTS_COUNT, 0);
+	
+	/* disable traffic gen */
+	phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_CTRL, 0);
 
-	phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_MDIO_BRDCST_WRITE, val);
+	/* disable broadcasts on MDIO bus */
+	phy_clear_bits_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_MDIO_BRDCST_WRITE,
+			   QCA8075_MMD7_MDIO_BRDCST_WRITE_EN);
+
+	/* disable loopback on switch port and PHY */
+	qca8k_clear_bits(priv, QCA8K_PORT_LOOKUP_CTRL(port_id),
+			 QCA8K_PORT_LOOKUP_LOOPBACK_EN);
+	psgmii_phy_loopback_disable(priv, phy, port_id);
 }
 
-static int
-qca8k_test_port_for_errors(struct qca8k_priv *priv, struct phy_device *phy,
-			   int port, int test_phase, u32 tests_result)
+static void psgmii_port_prep_test(struct qca8k_priv *priv,
+				  struct psgmii_port_data *port_data)
 {
-	int res = 0;
-	const int test_pkts_num = QCA8075_PKT_GEN_PKTS_COUNT;
+	struct phy_device *phy = port_data->phy;
+	int port_id = port_data->id;
 
-	if (test_phase == 1) { /* start test preps */
-		qca8k_phy_loopback_on_off(priv, phy, port, 1);
-		ipqess_switch_port_loopback_on_off(priv, port, 1);
-		qca8k_phy_broadcast_write_on_off(priv, phy, 1);
-		qca8k_phy_pkt_gen_prep(priv, phy, test_pkts_num, 1);
-	} else if (test_phase == 2) {
-		/* wait for test results, collect it and cleanup */
-		qca8k_wait_for_phy_pkt_gen_fin(priv, phy);
-		res = qca8k_get_phy_pkt_gen_test_result(phy, test_pkts_num);
-		qca8k_phy_pkt_gen_prep(priv, phy, test_pkts_num, 0);
-		qca8k_phy_broadcast_write_on_off(priv, phy, 0);
-		ipqess_switch_port_loopback_on_off(priv, port, 0);
-		qca8k_phy_loopback_on_off(priv, phy, port, 0);
+	/* put PHY and switch port in loopback */
+	psgmii_phy_loopback_enable(priv, phy, port_id);
+	qca8k_set_bits(priv, QCA8K_PORT_LOOKUP_CTRL(port_id),
+		       QCA8K_PORT_LOOKUP_LOOPBACK_EN);
+
+	/* enable broadcasts on MDIO bus */
+	phy_set_bits_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_MDIO_BRDCST_WRITE,
+			 QCA8075_MMD7_MDIO_BRDCST_WRITE_EN);
+
+	/* enable PHY CRC checker and packet counters */
+	phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_CRC_AND_PKTS_COUNT,
+		      QCA8075_MMD7_CNT_FRAME_CHK_EN | QCA8075_MMD7_CNT_SELFCLR);
+		      //MAGIC VALUE        V
+	qca8k_wait_for_phy_link_state(phy, 1);
+
+	/* set number of packets to send during the test */
+	phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_PKT_NUMB,
+		      QCA8075_PKT_GEN_PKTS_COUNT);
+	/* set packet size */
+	phy_write_mmd(phy, MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_PKT_SIZE,
+		      QCA8075_PKT_GEN_PKTS_SIZE);
+}
+
+static int psgmii_link_parallel_test(struct qca8k_priv *priv)
+{
+	struct psgmii_port_data *port_data;
+	bool test_failed = false;
+
+	list_for_each_entry(port_data, &calib, list) {
+		/* prep switch port for test */
+		psgmii_port_prep_test(priv, port_data);
 	}
 
-	if (test_phase == 2) {
-		tests_result <<= 1;
-		if (res)
-			tests_result |= 1;
+	psgmii_start_parallel_pkt_gen(priv);
+
+	list_for_each_entry(port_data, &calib, list) {
+		/* wait for test results */
+		qca8k_wait_for_phy_pkt_gen_fin(priv, port_data->phy);
+		qca8k_get_phy_pkt_gen_test_result(port_data);
+
+		if (!port_data->test_ok) {
+			/* log results */
+			//!!!!!!!!!! change to dev_dbg!!
+			dev_err(priv->dev, "PSGMII calibration is unstable! Failed parallel test.\n");
+			list_for_each_entry(port_data, &calib, list) {
+				dev_err(priv->dev, "port %d errors: %d %d %d %d\n",
+					port_data->id, port_data->tx_loss, port_data->rx_loss,
+					port_data->tx_errors, port_data->rx_errors);
+			}
+
+			test_failed = true;
+		}
+
+
+		psgmii_port_cleanup_test(priv, port_data);
+
 	}
 
-	return tests_result;
+	return test_failed;
 }
 
-static int
-qca8k_do_dsa_sw_ports_self_test(struct qca8k_priv *priv, int parallel_test)
+static int psgmii_link_series_test(struct qca8k_priv *priv)
 {
-	struct device_node *dn = priv->dev->of_node;
-	struct device_node *ports, *port;
-	struct device_node *phy_dn;
+	struct psgmii_port_data *port_data;
+	bool test_failed = false;
+
+	list_for_each_entry(port_data, &calib, list) {
+		/* prep switch port for test */
+		psgmii_port_prep_test(priv, port_data);
+
+		/* start packet generation */
+		phy_write_mmd(port_data->phy,
+			      MDIO_MMD_AN, QCA8075_MMD7_PKT_GEN_CTRL,
+			      QCA8075_MMD7_PKT_GEN_START |
+			      QCA8075_MMD7_PKT_GEN_INPROGR);
+
+		/* wait for test results */
+		qca8k_wait_for_phy_pkt_gen_fin(priv, port_data->phy);
+		qca8k_get_phy_pkt_gen_test_result(port_data);
+
+		if (!port_data->test_ok) {
+			/* log results */
+			//!!!!!!!!!! change to dev_dbg!!
+			dev_err(priv->dev, "PSGMII calibration is unstable! Failed parallel test.\n");
+			list_for_each_entry(port_data, &calib, list) {
+				dev_err(priv->dev, "port %d errors: %d %d %d %d\n",
+					port_data->id, port_data->tx_loss, port_data->rx_loss,
+					port_data->tx_errors, port_data->rx_errors);
+			}
+
+			test_failed = true;
+		}
+
+
+		psgmii_port_cleanup_test(priv, port_data);
+
+	}
+
+	return test_failed;
+}
+
+static int psgmii_test_link(struct qca8k_priv *priv)
+{
+	/* run series test */
+	if (psgmii_link_series_test(priv))
+		return 1;
+
+	/* run parallel test */
+	return psgmii_link_parallel_test(priv);
+}
+
+static void psgmii_free_calib_data(void) {
+	struct psgmii_port_data *port_data, *temp;
+
+	list_for_each_entry_safe(port_data, temp, &calib, list) {
+		list_del(&port_data->list);
+		kfree(port_data);
+	}
+}
+
+static int psgmii_alloc_calib_data(struct qca8k_priv *priv)
+{
+	struct device_node *phy_dn, *ports, *port_dn;
+	struct psgmii_port_data *port_data;
 	struct phy_device *phy;
-	int reg, err = 0, test_phase;
-	u32 tests_result = 0;
+	int err, port_id;
 
-	ports = of_get_child_by_name(dn, "ports");
+	/* get port data from device tree */
+	ports = of_get_child_by_name(priv->dev->of_node, "ports");
 	if (!ports) {
 		dev_err(priv->dev, "no ports child node found\n");
-			return -EINVAL;
+		return -EINVAL;
+	}
+	for_each_available_child_of_node(ports, port_dn) {
+		/* alloc port data */
+		port_data = kzalloc(sizeof(port_data), GFP_KERNEL);
+		if (!port_data) {
+			err = -ENOMEM;
+			goto out_free;
+		}
+
+		list_add(&port_data->list, &calib);
+
+		/* get port ID */
+		err = of_property_read_u32(port_dn, "reg", &port_id);
+		if (err) {
+			dev_err(priv->dev, "error: missing 'reg' property in device node\n");
+			goto out_free;
+		}
+
+		if (port_id >= QCA8K_NUM_PORTS) {
+			dev_err(priv->dev, "error: port ID out of range\n");
+			err = -EINVAL;
+			goto out_free;
+		}
+
+		/* get PHY device */
+		phy_dn = of_parse_phandle(port_dn, "phy-handle", 0);
+		if (!phy_dn) {
+			dev_err(priv->dev, "error: missing 'phy-handle' property in device node\n");
+			err = -EINVAL;
+			goto out_free;
+		}
+		phy = of_phy_find_device(phy_dn);
+		of_node_put(phy_dn);
+		if (!phy) {
+			dev_err(priv->dev,
+				"error: unable to fetch PHY device for port %d\n",
+				port_id);
+			err = -EINVAL;
+			goto out_free;
+		}
+
+		port_data->phy = phy;
+		port_data->id = port_id;
 	}
 
-	for (test_phase = 1; test_phase <= 2; test_phase++) {
-		if (parallel_test && test_phase == 2) {
-			err = qca8k_start_all_phys_pkt_gens(priv);
-			if (err)
-				goto error;
-		}
-		for_each_available_child_of_node(ports, port) {
-			err = of_property_read_u32(port, "reg", &reg);
-			if (err)
-				goto error;
-			if (reg >= QCA8K_NUM_PORTS) {
-				err = -EINVAL;
-				goto error;
-			}
-			phy_dn = of_parse_phandle(port, "phy-handle", 0);
-			if (phy_dn) {
-				phy = of_phy_find_device(phy_dn);
-				of_node_put(phy_dn);
-				if (phy) {
-					tests_result = qca8k_test_port_for_errors(priv,
-										  phy,
-										  reg,
-										  test_phase,
-										  tests_result);
+	return 0;
 
-					if (!parallel_test && test_phase == 1)
-						qca8k_start_phy_pkt_gen(phy);
-
-					put_device(&phy->mdio.dev);
-				}
-			}
-		}
-	}
-
-end:
-	of_node_put(ports);
-	qca8k_fdb_flush(priv);
-	return tests_result;
-error:
-	tests_result |= 0xf000;
-	goto end;
+out_free:
+	psgmii_free_calib_data();
+	return err;
 }
 
-static int
-psgmii_vco_calibrate_and_test(struct qca8k_priv *priv)
+static int psgmii_calibrate_and_test(struct qca8k_priv *priv)
 {
-	int ret, a, test_result;
+	struct psgmii_port_data *port_data;
+	bool test_failed = false;
+	int ret, attempt;
 
-	for (a = 0; a <= QCA8K_PSGMII_CALB_NUM; a++) {
+	ret = psgmii_alloc_calib_data(priv);
+	if (ret)
+		return ret;
+
+	for (attempt = 0; attempt <= QCA8K_PSGMII_CALB_NUM; attempt++) {
+		/* first we run the VCO calibration */
 		ret = psgmii_vco_calibrate(priv);
 		if (ret)
-			return ret;
-		/* first we run serial test */
-		test_result = qca8k_do_dsa_sw_ports_self_test(priv, 0);
-		/* and if it is ok then we run the test in parallel */
-		if (!test_result)
-			test_result = qca8k_do_dsa_sw_ports_self_test(priv, 1);
-		if (!test_result) {
-			if (a > 0) {
-				dev_warn(priv->dev,
-					 "PSGMII work was stabilized after %d calibration retries !\n",
-					 a);
-			}
+			goto out_free;
+
+		/* then, we test the link */
+		test_failed = psgmii_test_link(priv);
+
+		qca8k_fdb_flush(priv);
+
+		if (!test_failed) {
+		//change to dbg
+			dev_err(priv->dev,
+				"PSGMII link stabilized after %d attempts\n",
+				attempt + 1);
 			return 0;
 		}
+
+		/* if the PSGMII link is still unstable, we wait and retry */
 		schedule();
-		if (a > 0 && a % 10 == 0) {
+		if (attempt > 0 && attempt % 10 == 0) {
 			dev_err(priv->dev,
-				"PSGMII work is unstable !!! Let's try to wait a bit ... %d\n",
-				a);
+				"PSGMII link is unstable !!! Let's try to wait a bit ... %d/QCA8K_PSGMII_CALB_NUM\n",
+				attempt + 1);
 			set_current_state(TASK_INTERRUPTIBLE);
-			schedule_timeout(msecs_to_jiffies(a * 100));
+			schedule_timeout(msecs_to_jiffies(attempt * 100));
 		}
 	}
 
-	dev_err(priv->dev, "PSGMII work is unstable !!! Repeated recalibration attempts did not help(0x%x) !\n",
-		test_result);
+	dev_err(priv->dev, "PSGMII work is unstable! Repeated recalibration attempts did not help!\n");
+	ret = -EFAULT;
 
-	return -EFAULT;
+out_free:
+	list_for_each_entry(port_data, &calib, list) {
+		put_device(&port_data->phy->mdio.dev);
+	}
+	psgmii_free_calib_data();
+	return ret;
 }
 
 static int
@@ -390,8 +520,9 @@ ipqess_psgmii_configure(struct qca8k_priv *priv)
 	int ret;
 
 	if (!priv->psgmii_calibrated) {
-		dev_info(priv->dev, "PSGMII calibration!\n");
-		ret = psgmii_vco_calibrate_and_test(priv);
+		//change to dev_dbg
+		dev_err(priv->dev, "Starting PSGMII calibration...\n");
+		ret = psgmii_calibrate_and_test(priv);
 
 		ret = regmap_clear_bits(priv->psgmii, PSGMIIPHY_MODE_CONTROL,
 					PSGMIIPHY_MODE_ATHR_CSCO_MODE_25M);

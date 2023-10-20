@@ -370,6 +370,8 @@
 
 #define   QCA8K_PSGMII_CALB_NUM				100
 #define   MII_QCA8075_SSTATUS				0x11
+#define   MII_QCA8075_SSTATUS_WAIT                      8
+#define   MII_QCA8075_SSTATUS_RETRIES                   100
 #define   QCA8075_PHY_SPEC_STATUS_LINK			BIT(10)
 #define   QCA8075_MMD7_CRC_AND_PKTS_COUNT		0x8029
 #define   QCA8075_MMD7_PKT_GEN_PKT_NUMB			0x8021
@@ -389,6 +391,7 @@
 #define   QCA8075_MMD7_MDIO_BRDCST_WRITE_EN  BIT(15)
 #define   QCA8075_MDIO_BRDCST_PHY_ADDR			0x1f
 #define   QCA8075_PKT_GEN_PKTS_COUNT			4096
+#define   QCA8075_PKT_GEN_PKTS_SIZE			1504
 
 enum {
 	QCA8K_PORT_SPEED_10M = 0,
@@ -560,6 +563,8 @@ int qca8k_read_switch_id(struct qca8k_priv *priv);
 int qca8k_read(struct qca8k_priv *priv, u32 reg, u32 *val);
 int qca8k_write(struct qca8k_priv *priv, u32 reg, u32 val);
 int qca8k_rmw(struct qca8k_priv *priv, u32 reg, u32 mask, u32 write_val);
+int qca8k_set_bits(struct qca8k_priv *priv, u32 reg, u32 bits);
+int qca8k_clear_bits(struct qca8k_priv *priv, u32 reg, u32 bits);
 
 /* Common ops function */
 void qca8k_fdb_flush(struct qca8k_priv *priv);
