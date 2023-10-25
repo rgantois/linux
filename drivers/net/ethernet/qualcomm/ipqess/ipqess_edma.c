@@ -1040,7 +1040,7 @@ int ipqess_edma_init(struct platform_device *pdev, struct device_node *np)
 		goto err_edma;
 	}
 
-	edma->edma_clk = devm_clk_get(&pdev->dev, "ess");
+	edma->edma_clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(edma->edma_clk)) {
 		err = PTR_ERR(edma->edma_clk);
 		goto err_edma;

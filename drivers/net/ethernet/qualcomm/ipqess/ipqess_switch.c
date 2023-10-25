@@ -340,7 +340,7 @@ static void ipqess_switch_psgmii_rst(struct ipqess_switch *sw)
 static int ipqess_switch_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct device_node *np = dev->of_node, *mdio_np, *psgmii_ethphy_np;
+	struct device_node *np = dev->of_node, *mdio_np;
 	struct device_node *ports, *port_np;
 	struct ipqess_port *port = NULL;
 	void __iomem *base, *psgmii;
@@ -412,12 +412,7 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 		return -EPROBE_DEFER;
 	}
 
-	psgmii_ethphy_np = of_parse_phandle(np, "psgmii-ethphy", 0);
-	if (!psgmii_ethphy_np) {
-		dev_warn(dev, "unable to get PSGMII eth PHY phandle\n");
-		of_node_put(psgmii_ethphy_np);
-	}
-
+	/* The */
 	if (psgmii_ethphy_np) {
 		priv->psgmii_ethphy = of_phy_find_device(psgmii_ethphy_np);
 		of_node_put(psgmii_ethphy_np);
@@ -428,7 +423,7 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 	}
 
 	/* If we don't reset the PSGMII here the switch id check will fail */
-	sw->psgmii_rst = devm_reset_control_get(&pdev->dev, "psgmii_rst");
+	sw->psgmii_rst = devm_reset_control_get(&pdev->dev, "psgmii");
 	if (IS_ERR(sw->psgmii_rst)) {
 		ret = PTR_ERR(sw->psgmii_rst);
 		dev_err(dev, "Unable to get PSGMII reset line: err %d\n", ret);
@@ -537,7 +532,7 @@ ipqess_switch_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id qca8k_ipqess_of_match[] = {
-	{ .compatible = "qca,ipq4019-qca8337n", },
+	{ .compatible = "qcom,ipq4019-ess", },
 	{ /* sentinel */ },
 };
 
