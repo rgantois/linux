@@ -595,11 +595,9 @@ int qca8k_get_mac_eee(struct dsa_switch *ds, int port,
 }
 EXPORT_SYMBOL_GPL(qca8k_get_mac_eee);
 
-static int qca8k_port_configure_learning(struct dsa_switch *ds, int port,
+static int qca8k_port_configure_learning(struct qca8k_priv *priv, int port,
 					 bool learning)
 {
-	struct qca8k_priv *priv = ds->priv;
-
 	if (learning)
 		return regmap_set_bits(priv->regmap,
 				       QCA8K_PORT_LOOKUP_CTRL(port),
@@ -610,10 +608,8 @@ static int qca8k_port_configure_learning(struct dsa_switch *ds, int port,
 					 QCA8K_PORT_LOOKUP_LEARN);
 }
 
-void qca8k_port_stp_state_set(struct dsa_switch *ds, int port, u8 state)
+void qca8k_port_stp_state_set(struct qca8k_priv *priv, int port, u8 state, bool port_learning)
 {
-	struct dsa_port *dp = dsa_to_port(ds, port);
-	struct qca8k_priv *priv = ds->priv;
 	bool learning = false;
 	u32 stp_state;
 
@@ -629,10 +625,10 @@ void qca8k_port_stp_state_set(struct dsa_switch *ds, int port, u8 state)
 		break;
 	case BR_STATE_LEARNING:
 		stp_state = QCA8K_PORT_LOOKUP_STATE_LEARNING;
-		learning = dp->learning;
+		learning = port_learning;
 		break;
 	case BR_STATE_FORWARDING:
-		learning = dp->learning;
+		learning = port_learning;
 		fallthrough;
 	default:
 		stp_state = QCA8K_PORT_LOOKUP_STATE_FORWARD;
@@ -642,7 +638,7 @@ void qca8k_port_stp_state_set(struct dsa_switch *ds, int port, u8 state)
 	qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port),
 		  QCA8K_PORT_LOOKUP_STATE_MASK, stp_state);
 
-	qca8k_port_configure_learning(ds, port, learning);
+	qca8k_port_configure_learning(priv, port, learning);
 }
 EXPORT_SYMBOL_GPL(qca8k_port_stp_state_set);
 
@@ -664,7 +660,7 @@ int qca8k_port_bridge_flags(struct dsa_switch *ds, int port,
 	int ret;
 
 	if (flags.mask & BR_LEARNING) {
-		ret = qca8k_port_configure_learning(ds, port,
+		ret = qca8k_port_configure_learning(ds->priv, port,
 						    flags.val & BR_LEARNING);
 		if (ret)
 			return ret;
@@ -740,19 +736,16 @@ void qca8k_port_bridge_leave(struct dsa_switch *ds, int port,
 }
 EXPORT_SYMBOL_GPL(qca8k_port_bridge_leave);
 
-void qca8k_port_fast_age(struct dsa_switch *ds, int port)
+void qca8k_port_fast_age(struct qca8k_priv *priv, int port)
 {
-	struct qca8k_priv *priv = ds->priv;
-
 	mutex_lock(&priv->reg_mutex);
 	qca8k_fdb_access(priv, QCA8K_FDB_FLUSH_PORT, port);
 	mutex_unlock(&priv->reg_mutex);
 }
 EXPORT_SYMBOL_GPL(qca8k_port_fast_age);
 
-int qca8k_set_ageing_time(struct dsa_switch *ds, unsigned int msecs)
+int qca8k_set_ageing_time(struct qca8k_priv *priv, unsigned int msecs)
 {
-	struct qca8k_priv *priv = ds->priv;
 	unsigned int secs = msecs / 1000;
 	u32 val;
 
@@ -877,10 +870,9 @@ int qca8k_port_fdb_del(struct dsa_switch *ds, int port,
 }
 EXPORT_SYMBOL_GPL(qca8k_port_fdb_del);
 
-int qca8k_port_fdb_dump(struct dsa_switch *ds, int port,
+int qca8k_port_fdb_dump(struct qca8k_priv *priv, int port,
 			dsa_fdb_dump_cb_t *cb, void *data)
 {
-	struct qca8k_priv *priv = ds->priv;
 	struct qca8k_fdb _fdb = { 0 };
 	int cnt = QCA8K_NUM_FDB_RECORDS;
 	bool is_static;
@@ -1025,11 +1017,9 @@ err:
 }
 EXPORT_SYMBOL_GPL(qca8k_port_mirror_del);
 
-int qca8k_port_vlan_filtering(struct dsa_switch *ds, int port,
-			      bool vlan_filtering,
-			      struct netlink_ext_ack *extack)
+int qca8k_port_vlan_filtering(struct qca8k_priv *priv, int port,
+			      bool vlan_filtering)
 {
-	struct qca8k_priv *priv = ds->priv;
 	int ret;
 
 	if (vlan_filtering) {
@@ -1046,13 +1036,12 @@ int qca8k_port_vlan_filtering(struct dsa_switch *ds, int port,
 }
 EXPORT_SYMBOL_GPL(qca8k_port_vlan_filtering);
 
-int qca8k_port_vlan_add(struct dsa_switch *ds, int port,
+int qca8k_port_vlan_add(struct qca8k_priv *priv, int port,
 			const struct switchdev_obj_port_vlan *vlan,
 			struct netlink_ext_ack *extack)
 {
 	bool untagged = vlan->flags & BRIDGE_VLAN_INFO_UNTAGGED;
 	bool pvid = vlan->flags & BRIDGE_VLAN_INFO_PVID;
-	struct qca8k_priv *priv = ds->priv;
 	int ret;
 
 	ret = qca8k_vlan_add(priv, port, vlan->vid, untagged);

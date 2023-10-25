@@ -68,6 +68,7 @@ config QCOM_IPQ4019_ESS
 	select NET_DSA
 	select NET_SWITCHDEV
 	select NET_DSA_QCA8K_LIB
+	select PAGE_POOL
 	help
 	  This driver supports the Qualcomm Atheros IPQ40xx built-in
 	  Ethernet Switch Subsystem.

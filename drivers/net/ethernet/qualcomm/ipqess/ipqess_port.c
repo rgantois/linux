@@ -56,9 +56,7 @@ static void ipqess_port_fast_age(const struct ipqess_port *port)
 {
 	struct qca8k_priv *priv = port->sw->priv;
 
-	mutex_lock(&priv->reg_mutex);
-	qca8k_fdb_access(priv, QCA8K_FDB_FLUSH_PORT, port->index);
-	mutex_unlock(&priv->reg_mutex);
+	qca8k_port_fast_age(priv, port->index);
 
 	/* Flush all VLANs */
 	ipqess_port_notify_bridge_fdb_flush(port, 0);
@@ -68,35 +66,8 @@ static void ipqess_port_stp_state_set(struct ipqess_port *port,
 				      u8 state)
 {
 	struct qca8k_priv *priv = port->sw->priv;
-	u32 stp_state;
-	int err;
 
-	switch (state) {
-	case BR_STATE_DISABLED:
-		stp_state = QCA8K_PORT_LOOKUP_STATE_DISABLED;
-		break;
-	case BR_STATE_BLOCKING:
-		stp_state = QCA8K_PORT_LOOKUP_STATE_BLOCKING;
-		break;
-	case BR_STATE_LISTENING:
-		stp_state = QCA8K_PORT_LOOKUP_STATE_LISTENING;
-		break;
-	case BR_STATE_LEARNING:
-		stp_state = QCA8K_PORT_LOOKUP_STATE_LEARNING;
-		break;
-	case BR_STATE_FORWARDING:
-	default:
-		stp_state = QCA8K_PORT_LOOKUP_STATE_FORWARD;
-		break;
-	}
-
-	err = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port->index),
-			QCA8K_PORT_LOOKUP_STATE_MASK, stp_state);
-
-	if (err)
-		dev_warn(priv->dev,
-			 "failed to set STP state %d for port %d: err %d\n",
-			 stp_state, port->index, err);
+	qca8k_port_stp_state_set(priv, port->index, state, 0);
 }
 
 static void ipqess_port_set_state_now(struct ipqess_port *port,
@@ -180,9 +151,6 @@ static int ipqess_port_set_mac_address(struct net_device *netdev, void *a)
 	struct sockaddr *addr = a;
 	int err;
 
-	if (!is_valid_ether_addr(addr->sa_data))
-		return -EADDRNOTAVAIL;
-
 	/* If the port is down, the address isn't synced yet to hardware
 	 * so there is nothing to change
 	 */
@@ -244,36 +212,6 @@ static inline struct net_device *ipqess_port_bridge_dev_get(struct ipqess_port *
 	return port->bridge ? port->bridge->netdev : NULL;
 }
 
-static int ipqess_port_do_vlan_add(struct qca8k_priv *priv, int port_index,
-				   const struct switchdev_obj_port_vlan *vlan,
-				   struct netlink_ext_ack *extack)
-{
-	bool untagged = vlan->flags & BRIDGE_VLAN_INFO_UNTAGGED;
-	bool pvid = vlan->flags & BRIDGE_VLAN_INFO_PVID;
-	int ret;
-
-	ret = qca8k_vlan_add(priv, port_index, vlan->vid, untagged);
-	if (ret) {
-		dev_err(priv->dev, "Failed to add VLAN to port %d (%d)", port_index,
-			ret);
-		return ret;
-	}
-
-	if (pvid) {
-		ret = qca8k_rmw(priv, QCA8K_EGRESS_VLAN(port_index),
-				QCA8K_EGREES_VLAN_PORT_MASK(port_index),
-				QCA8K_EGREES_VLAN_PORT(port_index, vlan->vid));
-		if (ret)
-			return ret;
-
-		ret = qca8k_write(priv, QCA8K_REG_PORT_VLAN_CTRL0(port_index),
-				  QCA8K_PORT_VLAN_CVID(vlan->vid) |
-				  QCA8K_PORT_VLAN_SVID(vlan->vid));
-	}
-
-	return ret;
-}
-
 static int ipqess_port_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
 				       u16 vid)
 {
@@ -288,7 +226,7 @@ static int ipqess_port_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
 	int ret;
 
 	/* User port... */
-	ret = ipqess_port_do_vlan_add(port->sw->priv, port->index, &vlan, &extack);
+	ret = qca8k_port_vlan_add(port->sw->priv, port->index, &vlan, &extack);
 	if (ret) {
 		if (extack._msg)
 			netdev_err(dev, "%s\n", extack._msg);
@@ -296,7 +234,7 @@ static int ipqess_port_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
 	}
 
 	/* And CPU port... */
-	ret = ipqess_port_do_vlan_add(port->sw->priv, 0, &vlan, &extack);
+	ret = qca8k_port_vlan_add(port->sw->priv, 0, &vlan, &extack);
 	if (ret) {
 		if (extack._msg)
 			netdev_err(dev, "CPU port %d: %s\n", 0, extack._msg);
@@ -380,23 +318,12 @@ ipqess_port_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb,
 		.cb = cb,
 		.idx = *idx,
 	};
-	int cnt = QCA8K_NUM_FDB_RECORDS;
-	struct qca8k_fdb _fdb = { 0 };
-	bool is_static;
 	int ret = 0;
 
-	mutex_lock(&priv->reg_mutex);
-	while (cnt-- && !qca8k_fdb_next(priv, &_fdb, port->index)) {
-		if (!_fdb.aging)
-			break;
-		is_static = (_fdb.aging == QCA8K_ATU_STATUS_STATIC);
-		ret = ipqess_port_fdb_do_dump(_fdb.mac, _fdb.vid, is_static, &dump);
-		if (ret)
-			break;
-	}
-	mutex_unlock(&priv->reg_mutex);
-
 	*idx = dump.idx;
+
+	ret = qca8k_port_fdb_dump(priv, port->index, ipqess_port_fdb_do_dump,
+				  &dump);
 
 	return ret;
 }
@@ -523,24 +450,6 @@ static int ipqess_port_manage_vlan_filtering(struct net_device *netdev,
 	return 0;
 }
 
-static int ipqess_write_vlan_filtering(struct qca8k_priv *priv, int port_index,
-				       bool vlan_filtering)
-{
-	int ret;
-
-	if (vlan_filtering) {
-		ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port_index),
-				QCA8K_PORT_LOOKUP_VLAN_MODE_MASK,
-				QCA8K_PORT_LOOKUP_VLAN_MODE_SECURE);
-	} else {
-		ret = qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(port_index),
-				QCA8K_PORT_LOOKUP_VLAN_MODE_MASK,
-				QCA8K_PORT_LOOKUP_VLAN_MODE_NONE);
-	}
-
-	return ret;
-}
-
 static int ipqess_port_vlan_filtering(struct ipqess_port *port,
 				      bool vlan_filtering,
 				      struct netlink_ext_ack *extack)
@@ -562,8 +471,8 @@ static int ipqess_port_vlan_filtering(struct ipqess_port *port,
 	if (old_vlan_filtering == vlan_filtering)
 		return 0;
 
-	err = ipqess_write_vlan_filtering(port->sw->priv, port->index,
-					  vlan_filtering);
+	err = qca8k_port_vlan_filtering(port->sw->priv, port->index,
+					vlan_filtering);
 
 	if (err)
 		return err;
@@ -578,8 +487,8 @@ static int ipqess_port_vlan_filtering(struct ipqess_port *port,
 	return 0;
 
 restore:
-	err = ipqess_write_vlan_filtering(port->sw->priv, port->index,
-					  old_vlan_filtering);
+	err = qca8k_port_vlan_filtering(port->sw->priv, port->index,
+					old_vlan_filtering);
 	port->vlan_filtering = old_vlan_filtering;
 
 	return err;
@@ -982,7 +891,7 @@ static int ipqess_port_host_vlan_add(struct net_device *netdev,
 	vlan->flags &= ~BRIDGE_VLAN_INFO_PVID;
 
 	/* Add vid to CPU port */
-	return ipqess_port_do_vlan_add(port->sw->priv, 0, vlan, extack);
+	return qca8k_port_vlan_add(port->sw->priv, 0, vlan, extack);
 }
 
 static int ipqess_port_vlan_add(struct net_device *netdev,
@@ -1015,7 +924,7 @@ static int ipqess_port_vlan_add(struct net_device *netdev,
 		}
 	}
 
-	err = ipqess_port_do_vlan_add(port->sw->priv, port->index, vlan, extack);
+	err = qca8k_port_vlan_add(port->sw->priv, port->index, vlan, extack);
 	return err;
 }
 
@@ -1526,7 +1435,6 @@ static void ipqess_port_get_drvinfo(struct net_device *dev,
 				    struct ethtool_drvinfo *drvinfo)
 {
 	strscpy(drvinfo->driver, "qca8k-ipqess", sizeof(drvinfo->driver));
-	strscpy(drvinfo->fw_version, "N/A", sizeof(drvinfo->fw_version));
 	strscpy(drvinfo->bus_info, "platform", sizeof(drvinfo->bus_info));
 }
 
@@ -1535,11 +1443,6 @@ static int ipqess_port_nway_reset(struct net_device *dev)
 	struct ipqess_port *port = netdev_priv(dev);
 
 	return phylink_ethtool_nway_reset(port->pl);
-}
-
-static int ipqess_port_get_eeprom_len(struct net_device *dev)
-{
-	return 0;
 }
 
 static const char ipqess_gstrings_base_stats[][ETH_GSTRING_LEN] = {
@@ -1670,24 +1573,24 @@ static int ipqess_port_set_eee(struct net_device *dev, struct ethtool_eee *eee)
 	int ret;
 	u32 lpi_en = QCA8K_REG_EEE_CTRL_LPI_EN(port->index);
 	struct qca8k_priv *priv = port->sw->priv;
-	u32 reg;
+	u32 lpi_ctl1;
 
 	/* Port's PHY and MAC both need to be EEE capable */
 	if (!dev->phydev || !port->pl)
 		return -ENODEV;
 
 	mutex_lock(&priv->reg_mutex);
-	ret = qca8k_read(priv, QCA8K_REG_EEE_CTRL, &reg);
-	if (ret < 0) {
+	lpi_ctl1 = qca8k_read(priv, QCA8K_REG_EEE_CTRL, &lpi_ctl1);
+	if (lpi_ctl1 < 0) {
 		mutex_unlock(&priv->reg_mutex);
 		return ret;
 	}
 
-	if (eee->eee_enabled)
-		reg |= lpi_en;
+	if (eee->tx_lpi_enabled && eee->eee_enabled)
+		lpi_ctl1 |= lpi_en;
 	else
-		reg &= ~lpi_en;
-	ret = qca8k_write(priv, QCA8K_REG_EEE_CTRL, reg);
+		lpi_ctl1 &= ~lpi_en;
+	ret = qca8k_write(priv, QCA8K_REG_EEE_CTRL, lpi_ctl1);
 	mutex_unlock(&priv->reg_mutex);
 
 	if (ret)
@@ -1743,7 +1646,6 @@ static const struct ethtool_ops ipqess_port_ethtool_ops = {
 	.get_drvinfo		= ipqess_port_get_drvinfo,
 	.nway_reset		= ipqess_port_nway_reset,
 	.get_link		= ethtool_op_get_link,
-	.get_eeprom_len		= ipqess_port_get_eeprom_len,
 	.get_strings		= ipqess_port_get_strings,
 	.get_ethtool_stats	= ipqess_port_get_ethtool_stats,
 	.get_sset_count		= ipqess_port_get_sset_count,

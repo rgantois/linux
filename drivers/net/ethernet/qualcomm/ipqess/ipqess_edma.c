@@ -17,6 +17,7 @@
 #include <linux/of_platform.h>
 #include <net/ip6_checksum.h>
 #include <net/dst_metadata.h>
+#include <net/page_pool/helpers.h>
 
 #include "ipqess_edma.h"
 #include "ipqess_port.h"
@@ -168,11 +169,14 @@ static int ipqess_edma_rx_buf_prepare(struct ipqess_edma_buf *buf,
 static int ipqess_edma_rx_buf_alloc_napi(struct ipqess_edma_rx_ring *rx_ring)
 {
 	struct ipqess_edma_buf *buf = &rx_ring->buf[rx_ring->head];
+	struct page *new_page = page_pool_dev_alloc_pages(rx_ring->page_pool);
 
-	buf->skb = napi_alloc_skb(&rx_ring->napi_rx,
-				  IPQESS_EDMA_RX_HEAD_BUFF_SIZE);
-	if (!buf->skb)
+	if (!new_page)
 		return -ENOMEM;
+
+	buf->skb = napi_build_skb(page_address(new_page),
+				  IPQESS_EDMA_RX_HEAD_BUFF_SIZE);
+	skb_mark_for_recycle(buf->skb);
 
 	return ipqess_edma_rx_buf_prepare(buf, rx_ring);
 }
@@ -180,12 +184,15 @@ static int ipqess_edma_rx_buf_alloc_napi(struct ipqess_edma_rx_ring *rx_ring)
 static int ipqess_edma_rx_buf_alloc(struct ipqess_edma_rx_ring *rx_ring)
 {
 	struct ipqess_edma_buf *buf = &rx_ring->buf[rx_ring->head];
+	struct page *new_page = page_pool_dev_alloc_pages(rx_ring->page_pool);
 
-	buf->skb = netdev_alloc_skb_ip_align(rx_ring->edma->netdev,
-					     IPQESS_EDMA_RX_HEAD_BUFF_SIZE);
-
-	if (!buf->skb)
+	if (!new_page)
 		return -ENOMEM;
+
+	buf->skb = build_skb(page_address(new_page),
+			     IPQESS_EDMA_RX_HEAD_BUFF_SIZE);
+	skb_reserve(buf->skb, NET_IP_ALIGN);
+	skb_mark_for_recycle(buf->skb);
 
 	return ipqess_edma_rx_buf_prepare(buf, rx_ring);
 }
@@ -215,36 +222,50 @@ static void ipqess_edma_refill_work(struct work_struct *work)
 
 static int ipqess_edma_rx_ring_alloc(struct ipqess_edma *edma)
 {
+	struct page_pool_params pp_params = {
+		.order = 0,
+		.flags = PP_FLAG_DMA_MAP | PP_FLAG_DMA_SYNC_DEV,
+		.pool_size = IPQESS_EDMA_RX_RING_SIZE,
+		.nid = dev_to_node(&edma->pdev->dev),
+		.dev = &edma->pdev->dev,
+		.dma_dir = DMA_FROM_DEVICE,
+		.offset = 0,
+		.max_len = PAGE_SIZE,
+	};
 	int i;
 
 	for (i = 0; i < IPQESS_EDMA_NETDEV_QUEUES; i++) {
+		struct ipqess_edma_rx_ring *rx_ring = &edma->rx_ring[i];
 		int j;
 
-		edma->rx_ring[i].edma = edma;
-		edma->rx_ring[i].ppdev = &edma->pdev->dev;
-		edma->rx_ring[i].ring_id = i;
-		edma->rx_ring[i].idx = i * 2;
+		rx_ring->edma = edma;
+		rx_ring->ppdev = &edma->pdev->dev;
+		rx_ring->ring_id = i;
+		rx_ring->idx = i * 2;
 
-		edma->rx_ring[i].buf =
+		rx_ring->buf =
 			devm_kzalloc(&edma->pdev->dev,
 				     sizeof(struct ipqess_edma_buf)
 				     * IPQESS_EDMA_RX_RING_SIZE,
 				     GFP_KERNEL);
 
-		if (!edma->rx_ring[i].buf)
+		if (!rx_ring->buf)
 			return -ENOMEM;
 
-		edma->rx_ring[i].hw_desc =
+		rx_ring->hw_desc =
 			dmam_alloc_coherent(&edma->pdev->dev,
 					    sizeof(struct ipqess_edma_rx_desc)
 					    * IPQESS_EDMA_RX_RING_SIZE,
-					    &edma->rx_ring[i].dma, GFP_KERNEL);
+					    &rx_ring->dma, GFP_KERNEL);
 
-		if (!edma->rx_ring[i].hw_desc)
+		if (!rx_ring->hw_desc)
 			return -ENOMEM;
 
+		rx_ring->page_pool = page_pool_create(&pp_params);
+
+		/* Fill the entire ring once */
 		for (j = 0; j < IPQESS_EDMA_RX_RING_SIZE; j++)
-			if (ipqess_edma_rx_buf_alloc(&edma->rx_ring[i]) < 0)
+			if (ipqess_edma_rx_buf_alloc(rx_ring) < 0)
 				return -ENOMEM;
 
 		edma->rx_refill[i].rx_ring = &edma->rx_ring[i];
@@ -252,8 +273,8 @@ static int ipqess_edma_rx_ring_alloc(struct ipqess_edma *edma)
 			  ipqess_edma_refill_work);
 
 		ipqess_edma_w32(edma,
-				IPQESS_EDMA_REG_RFD_BASE_ADDR_Q(edma->rx_ring[i].idx),
-				(u32)(edma->rx_ring[i].dma));
+				IPQESS_EDMA_REG_RFD_BASE_ADDR_Q(rx_ring->idx),
+				(u32)(rx_ring->dma));
 	}
 
 	ipqess_edma_w32(edma, IPQESS_EDMA_REG_RX_DESC0,
@@ -268,18 +289,20 @@ static void ipqess_edma_rx_ring_free(struct ipqess_edma *edma)
 	int i;
 
 	for (i = 0; i < IPQESS_EDMA_NETDEV_QUEUES; i++) {
+		struct ipqess_edma_rx_ring *rx_ring = &edma->rx_ring[i];
 		int j;
 
 		cancel_work_sync(&edma->rx_refill[i].refill_work);
-		atomic_set(&edma->rx_ring[i].refill_count, 0);
+		atomic_set(&rx_ring->refill_count, 0);
 
 		for (j = 0; j < IPQESS_EDMA_RX_RING_SIZE; j++) {
 			dma_unmap_single(&edma->pdev->dev,
-					 edma->rx_ring[i].buf[j].dma,
-					 edma->rx_ring[i].buf[j].length,
+					 rx_ring->buf[j].dma,
+					 rx_ring->buf[j].length,
 					 DMA_FROM_DEVICE);
-			dev_kfree_skb_any(edma->rx_ring[i].buf[j].skb);
+			dev_kfree_skb_any(rx_ring->buf[j].skb);
 		}
+		page_pool_destroy(rx_ring->page_pool);
 	}
 }
 
@@ -296,9 +319,9 @@ static int ipqess_edma_redirect(struct ipqess_edma_rx_ring *rx_ring,
 	}
 
 	if (port_id < 0 || port_id > QCA8K_NUM_PORTS) {
-		dev_warn(rx_ring->edma->sw->priv->dev,
-			 "received packet tagged with out-of-bounds port id %d\n",
-			 port_id);
+		dev_warn_ratelimited(rx_ring->edma->sw->priv->dev,
+				     "received packet tagged with out-of-bounds port id %d\n",
+				     port_id);
 		return -EINVAL;
 	}
 
