@@ -27,10 +27,6 @@ struct ipqess_switch {
 	struct list_head	mdbs;
 };
 
-struct ipqess_devlink_priv {
-	struct ipqess_switch *sw;
-};
-
 unsigned int ipqess_switch_fastest_ageing_time(struct ipqess_switch *sw,
 					       unsigned int ageing_time);
 int ipqess_set_ageing_time(struct ipqess_switch *sw, unsigned int msecs);

@@ -96,4 +96,7 @@ bool ipqess_port_offloads_bridge_port(struct ipqess_port *port,
 /* Defined in ipqess_calib.c */
 int psgmii_calibrate_and_test(struct qca8k_priv *priv);
 
+/* Defined in ipqess_ethtool.c */
+void ipqess_port_set_ethtool_ops(struct net_device *netdev);
+
 #endif

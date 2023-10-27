@@ -10,7 +10,6 @@
 #include <linux/etherdevice.h>
 #include <linux/if_vlan.h>
 #include <linux/of_net.h>
-#include <net/selftests.h>
 
 #include "ipqess_port.h"
 #include "ipqess_edma.h"
@@ -874,9 +873,10 @@ static int ipqess_port_host_vlan_add(struct net_device *netdev,
 				     struct netlink_ext_ack *extack)
 {
 	struct ipqess_port *port = netdev_priv(netdev);
-	struct net_device *br = ipqess_port_bridge_dev_get(port);
 	struct switchdev_obj_port_vlan *vlan;
+	struct net_device *br;
 
+	br = ipqess_port_bridge_dev_get(port);
 	/* Do nothing is this is a software bridge */
 	if (!port->bridge)
 		return -EOPNOTSUPP;
@@ -1050,33 +1050,33 @@ int ipqess_port_obj_del(struct net_device *netdev, const void *ctx,
 static int ipqess_cpu_port_fdb_del(struct ipqess_port *port,
 				   const unsigned char *addr, u16 vid)
 {
+	struct ipqess_mac_addr *mac_addr = NULL;
+	struct ipqess_mac_addr *other_mac_addr;
 	struct ipqess_switch *sw = port->sw;
-	struct ipqess_mac_addr *a = NULL;
-	struct ipqess_mac_addr *other_a;
 	int err = 0;
 
 	mutex_lock(&sw->addr_lists_lock);
 
-	list_for_each_entry(other_a, &sw->fdbs, list)
-		if (ether_addr_equal(other_a->addr, addr) && other_a->vid == vid)
-			a = other_a;
+	list_for_each_entry(other_mac_addr, &sw->fdbs, list)
+		if (ether_addr_equal(other_mac_addr->addr, addr) && other_mac_addr->vid == vid)
+			mac_addr = other_mac_addr;
 
-	if (!a) {
+	if (!mac_addr) {
 		err = -ENOENT;
 		goto out;
 	}
 
-	if (!refcount_dec_and_test(&a->refcount))
+	if (!refcount_dec_and_test(&mac_addr->refcount))
 		goto out;
 
 	err = qca8k_fdb_del(sw->priv, addr, BIT(IPQESS_SWITCH_CPU_PORT), vid);
 	if (err) {
-		refcount_set(&a->refcount, 1);
+		refcount_set(&mac_addr->refcount, 1);
 		goto out;
 	}
 
-	list_del(&a->list);
-	kfree(a);
+	list_del(&mac_addr->list);
+	kfree(mac_addr);
 
 out:
 	mutex_unlock(&sw->addr_lists_lock);
@@ -1417,6 +1417,7 @@ static int ipqess_port_phy_setup(struct net_device *netdev)
 		 */
 		ret = ipqess_port_phy_connect(netdev, port->index, phy_flags);
 	}
+
 	if (ret) {
 		netdev_err(netdev, "failed to connect to PHY: %pe\n",
 			   ERR_PTR(ret));
@@ -1426,239 +1427,9 @@ static int ipqess_port_phy_setup(struct net_device *netdev)
 
 	dev_info(&netdev->dev, "enabled port's phy: %s",
 		 phydev_name(netdev->phydev));
+
 	return ret;
 }
-
-/* ethtool ops */
-
-static void ipqess_port_get_drvinfo(struct net_device *dev,
-				    struct ethtool_drvinfo *drvinfo)
-{
-	strscpy(drvinfo->driver, "qca8k-ipqess", sizeof(drvinfo->driver));
-	strscpy(drvinfo->bus_info, "platform", sizeof(drvinfo->bus_info));
-}
-
-static int ipqess_port_nway_reset(struct net_device *dev)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-
-	return phylink_ethtool_nway_reset(port->pl);
-}
-
-static const char ipqess_gstrings_base_stats[][ETH_GSTRING_LEN] = {
-	"tx_packets",
-	"tx_bytes",
-	"rx_packets",
-	"rx_bytes",
-};
-
-static void ipqess_port_get_strings(struct net_device *dev,
-				    u32 stringset, u8 *data)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-	struct qca8k_priv *priv = port->sw->priv;
-	int i;
-
-	if (stringset == ETH_SS_STATS) {
-		memcpy(data, &ipqess_gstrings_base_stats,
-		       sizeof(ipqess_gstrings_base_stats));
-
-		if (stringset != ETH_SS_STATS)
-			return;
-
-		for (i = 0; i < priv->info->mib_count; i++)
-			memcpy(data + (4 + i) * ETH_GSTRING_LEN,
-			       ar8327_mib[i].name,
-			       ETH_GSTRING_LEN);
-
-	} else if (stringset == ETH_SS_TEST) {
-		net_selftest_get_strings(data);
-	}
-}
-
-static void ipqess_port_get_ethtool_stats(struct net_device *dev,
-					  struct ethtool_stats *stats,
-					  uint64_t *data)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-	struct qca8k_priv *priv = port->sw->priv;
-	const struct qca8k_mib_desc *mib;
-	struct pcpu_sw_netstats *s;
-	unsigned int start;
-	u32 reg, c, val;
-	u32 hi = 0;
-	int ret;
-	int i;
-
-	for_each_possible_cpu(i) {
-		u64 tx_packets, tx_bytes, rx_packets, rx_bytes;
-
-		s = per_cpu_ptr(dev->tstats, i);
-		do {
-			start = u64_stats_fetch_begin(&s->syncp);
-			tx_packets = u64_stats_read(&s->tx_packets);
-			tx_bytes = u64_stats_read(&s->tx_bytes);
-			rx_packets = u64_stats_read(&s->rx_packets);
-			rx_bytes = u64_stats_read(&s->rx_bytes);
-		} while (u64_stats_fetch_retry(&s->syncp, start));
-		data[0] += tx_packets;
-		data[1] += tx_bytes;
-		data[2] += rx_packets;
-		data[3] += rx_bytes;
-	}
-
-	for (c = 0; c < priv->info->mib_count; c++) {
-		mib = &ar8327_mib[c];
-		reg = QCA8K_PORT_MIB_COUNTER(port->index) + mib->offset;
-
-		ret = qca8k_read(priv, reg, &val);
-		if (ret < 0)
-			continue;
-
-		if (mib->size == 2) {
-			ret = qca8k_read(priv, reg + 4, &hi);
-			if (ret < 0)
-				continue;
-		}
-
-		data[4 + c] = val;
-		if (mib->size == 2)
-			data[4 + c] |= (u64)hi << 32;
-	}
-}
-
-static int ipqess_port_get_sset_count(struct net_device *dev, int sset)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-	struct qca8k_priv *priv = port->sw->priv;
-
-	if (sset == ETH_SS_STATS) {
-		int count = 0;
-
-		if (sset != ETH_SS_STATS)
-			count = 0;
-		else
-			count = priv->info->mib_count;
-
-		if (count < 0)
-			return count;
-
-		return count + 4;
-	} else if (sset == ETH_SS_TEST) {
-		return net_selftest_get_count();
-	}
-
-	return -EOPNOTSUPP;
-}
-
-static int ipqess_port_set_wol(struct net_device *dev,
-			       struct ethtool_wolinfo *w)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-
-	return phylink_ethtool_set_wol(port->pl, w);
-}
-
-static void ipqess_port_get_wol(struct net_device *dev,
-				struct ethtool_wolinfo *w)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-
-	phylink_ethtool_get_wol(port->pl, w);
-}
-
-static int ipqess_port_set_eee(struct net_device *dev, struct ethtool_eee *eee)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-	int ret;
-	u32 lpi_en = QCA8K_REG_EEE_CTRL_LPI_EN(port->index);
-	struct qca8k_priv *priv = port->sw->priv;
-	u32 lpi_ctl1;
-
-	/* Port's PHY and MAC both need to be EEE capable */
-	if (!dev->phydev || !port->pl)
-		return -ENODEV;
-
-	mutex_lock(&priv->reg_mutex);
-	lpi_ctl1 = qca8k_read(priv, QCA8K_REG_EEE_CTRL, &lpi_ctl1);
-	if (lpi_ctl1 < 0) {
-		mutex_unlock(&priv->reg_mutex);
-		return ret;
-	}
-
-	if (eee->tx_lpi_enabled && eee->eee_enabled)
-		lpi_ctl1 |= lpi_en;
-	else
-		lpi_ctl1 &= ~lpi_en;
-	ret = qca8k_write(priv, QCA8K_REG_EEE_CTRL, lpi_ctl1);
-	mutex_unlock(&priv->reg_mutex);
-
-	if (ret)
-		return ret;
-
-	return phylink_ethtool_set_eee(port->pl, eee);
-}
-
-static int ipqess_port_get_eee(struct net_device *dev, struct ethtool_eee *e)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-
-	/* Port's PHY and MAC both need to be EEE capable */
-	if (!dev->phydev || !port->pl)
-		return -ENODEV;
-
-	return phylink_ethtool_get_eee(port->pl, e);
-}
-
-static int ipqess_port_get_link_ksettings(struct net_device *dev,
-					  struct ethtool_link_ksettings *cmd)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-
-	return phylink_ethtool_ksettings_get(port->pl, cmd);
-}
-
-static int ipqess_port_set_link_ksettings(struct net_device *dev,
-					  const struct ethtool_link_ksettings *cmd)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-
-	return phylink_ethtool_ksettings_set(port->pl, cmd);
-}
-
-static void ipqess_port_get_pauseparam(struct net_device *dev,
-				       struct ethtool_pauseparam *pause)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-
-	phylink_ethtool_get_pauseparam(port->pl, pause);
-}
-
-static int ipqess_port_set_pauseparam(struct net_device *dev,
-				      struct ethtool_pauseparam *pause)
-{
-	struct ipqess_port *port = netdev_priv(dev);
-
-	return phylink_ethtool_set_pauseparam(port->pl, pause);
-}
-
-static const struct ethtool_ops ipqess_port_ethtool_ops = {
-	.get_drvinfo		= ipqess_port_get_drvinfo,
-	.nway_reset		= ipqess_port_nway_reset,
-	.get_link		= ethtool_op_get_link,
-	.get_strings		= ipqess_port_get_strings,
-	.get_ethtool_stats	= ipqess_port_get_ethtool_stats,
-	.get_sset_count		= ipqess_port_get_sset_count,
-	.self_test		= net_selftest,
-	.set_wol		= ipqess_port_set_wol,
-	.get_wol		= ipqess_port_get_wol,
-	.set_eee		= ipqess_port_set_eee,
-	.get_eee		= ipqess_port_get_eee,
-	.get_link_ksettings	= ipqess_port_get_link_ksettings,
-	.set_link_ksettings	= ipqess_port_set_link_ksettings,
-	.get_pauseparam		= ipqess_port_get_pauseparam,
-	.set_pauseparam		= ipqess_port_set_pauseparam,
-};
 
 /* netlink */
 
@@ -1700,13 +1471,14 @@ static int ipqess_port_devlink_setup(struct ipqess_port *port)
 	struct devlink_port *dlp = &port->devlink_port;
 	struct devlink *dl = port->sw->devlink;
 	struct devlink_port_attrs attrs = {};
+	const unsigned char *id;
 	unsigned int index = 0;
-	const unsigned char *id = (const unsigned char *)&index;
-	unsigned char len = sizeof(index);
+	unsigned char len;
 	int err;
 
+	id = (const unsigned char *)&index;
+	len = sizeof(index);
 	memset(dlp, 0, sizeof(*dlp));
-	devlink_port_init(dl, dlp);
 
 	attrs.phys.port_number = port->index;
 	memcpy(attrs.switch_id.id, id, len);
@@ -1786,7 +1558,7 @@ int ipqess_port_register(struct ipqess_switch *sw,
 	netdev->dev.of_node = port->dn;
 
 	netdev->rtnl_link_ops = &ipqess_port_link_ops;
-	netdev->ethtool_ops = &ipqess_port_ethtool_ops;
+	ipqess_port_set_ethtool_ops(netdev);
 
 	netdev->tstats = netdev_alloc_pcpu_stats(struct pcpu_sw_netstats);
 	if (!netdev->tstats) {
@@ -1811,17 +1583,13 @@ int ipqess_port_register(struct ipqess_switch *sw,
 	/* We use the qid and not the index because port 0 isn't registered */
 	sw->port_list[port->qid] = port;
 
-	rtnl_lock();
-
-	err = register_netdevice(netdev);
+	err = register_netdev(netdev);
 	if (err) {
 		pr_err("error %d registering interface %s\n",
 		       err, netdev->name);
 		rtnl_unlock();
 		goto out_phy;
 	}
-
-	rtnl_unlock();
 
 	return 0;
 

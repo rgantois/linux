@@ -42,7 +42,7 @@ static const struct devlink_ops ipqess_devlink_ops = {
 
 static int ipqess_switch_devlink_alloc(struct ipqess_switch *sw)
 {
-	struct ipqess_devlink_priv *dl_priv;
+	struct ipqess_switch **dl_priv;
 	struct devlink *dl;
 
 	/* Add the switch to devlink before calling setup, so that setup can
@@ -55,7 +55,7 @@ static int ipqess_switch_devlink_alloc(struct ipqess_switch *sw)
 	sw->devlink = dl;
 
 	dl_priv = devlink_priv(sw->devlink);
-	dl_priv->sw = sw;
+	*dl_priv = sw;
 
 	return 0;
 }
@@ -326,9 +326,9 @@ static void ipqess_switch_psgmii_rst(struct ipqess_switch *sw)
 
 static int ipqess_switch_probe(struct platform_device *pdev)
 {
-	struct device *dev = &pdev->dev;
-	struct device_node *np = dev->of_node, *mdio_np;
 	struct device_node *ports, *port_np;
+	struct device_node *np, *mdio_np;
+	struct device *dev = &pdev->dev;
 	struct ipqess_port *port = NULL;
 	void __iomem *base, *psgmii;
 	struct ipqess_switch *sw;
@@ -350,6 +350,7 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 	priv->info = &ipqess;
 	priv->ds = NULL;
 
+	np = dev->of_node;
 	ports = of_get_child_by_name(np, "ports");
 	if (!ports) {
 		dev_err(dev, "no 'ports' attribute found\n");
@@ -373,8 +374,9 @@ static int ipqess_switch_probe(struct platform_device *pdev)
 
 	psgmii = devm_platform_ioremap_resource_byname(pdev, "psgmii_phy");
 	if (IS_ERR(psgmii)) {
-		dev_err(dev, "platform ioremap psgmii fail %li\n", PTR_ERR(psgmii));
-		return PTR_ERR(psgmii);
+		ret = PTR_ERR(psgmii);
+		dev_err(dev, "platform ioremap psgmii fail %li\n", ret);
+		return ret;
 	}
 
 	priv->psgmii = devm_regmap_init_mmio(dev, psgmii,
@@ -499,8 +501,8 @@ ipqess_switch_remove(struct platform_device *pdev)
 		qca8k_rmw(priv, QCA8K_PORT_LOOKUP_CTRL(i),
 			  QCA8K_PORT_LOOKUP_STATE_MASK,
 			  QCA8K_PORT_LOOKUP_STATE_DISABLED);
-			  qca8k_port_set_status(priv, i, 0);
-			  priv->port_enabled_map &= ~BIT(i);
+		qca8k_port_set_status(priv, i, 0);
+		priv->port_enabled_map &= ~BIT(i);
 	}
 
 	/* Unregister user ports */
