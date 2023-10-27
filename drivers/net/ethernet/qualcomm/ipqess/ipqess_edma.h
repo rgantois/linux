@@ -76,12 +76,12 @@ struct ipqess_edma_buf {
 };
 
 struct ipqess_edma_tx_ring {
-	struct ipqess_edma_tx_desc *hw_desc;
+	struct ipqess_edma_tx_desc *desc;
 	struct ipqess_edma_buf *buf;
 	struct napi_struct napi_tx;
 	struct ipqess_edma *edma;
 	struct netdev_queue *nq;
-	dma_addr_t dma;
+	dma_addr_t ring_dma;
 	int ring_id;
 	u16 count;
 	u32 idx;
@@ -90,14 +90,14 @@ struct ipqess_edma_tx_ring {
 };
 
 struct ipqess_edma_rx_ring {
-	struct ipqess_edma_rx_desc **hw_desc;
 	struct ipqess_edma_buf *buf;
 	struct page_pool *page_pool;
 	struct napi_struct napi_rx;
 	struct ipqess_edma *edma;
 	atomic_t refill_count;
 	struct device *ppdev;
-	dma_addr_t dma;
+	dma_addr_t *desc_dma;
+	dma_addr_t ring_dma;
 	int ring_id;
 	u32 idx;
 	u16 head;

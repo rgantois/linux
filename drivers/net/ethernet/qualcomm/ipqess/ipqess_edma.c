@@ -71,13 +71,13 @@ static int ipqess_edma_tx_ring_alloc(struct ipqess_edma *edma)
 			return -ENOMEM;
 
 		size = sizeof(struct ipqess_edma_tx_desc) * IPQESS_EDMA_TX_RING_SIZE;
-		tx_ring->hw_desc = dmam_alloc_coherent(dev, size, &tx_ring->dma,
+		tx_ring->desc = dmam_alloc_coherent(dev, size, &tx_ring->ring_dma,
 						       GFP_KERNEL);
-		if (!tx_ring->hw_desc)
+		if (!tx_ring->desc)
 			return -ENOMEM;
 
 		ipqess_edma_w32(edma, IPQESS_EDMA_REG_TPD_BASE_ADDR_Q(tx_ring->idx),
-				(u32)tx_ring->dma);
+				(u32)tx_ring->ring_dma);
 
 		idx = ipqess_edma_r32(edma, IPQESS_EDMA_REG_TPD_IDX_Q(tx_ring->idx));
 		idx >>= IPQESS_EDMA_TPD_CONS_IDX_SHIFT; /* need u32 here */
@@ -125,7 +125,7 @@ static void ipqess_edma_tx_ring_free(struct ipqess_edma *edma)
 	for (i = 0; i < IPQESS_EDMA_NETDEV_QUEUES; i++) {
 		int j;
 
-		if (edma->tx_ring[i].hw_desc)
+		if (edma->tx_ring[i].desc)
 			continue;
 
 		for (j = 0; j < IPQESS_EDMA_TX_RING_SIZE; j++) {
@@ -153,8 +153,7 @@ static int ipqess_edma_rx_buf_prepare(struct ipqess_edma_buf *buf,
 	}
 
 	buf->length = IPQESS_EDMA_RX_HEAD_BUFF_SIZE;
-	rx_ring->hw_desc[rx_ring->head] =
-			(struct ipqess_edma_rx_desc *)buf->dma;
+	rx_ring->desc_dma[rx_ring->head] = buf->dma;
 	rx_ring->head = (rx_ring->head + 1) % IPQESS_EDMA_RX_RING_SIZE;
 
 	ipqess_edma_m32(rx_ring->edma, IPQESS_EDMA_RFD_PROD_IDX_BITS,
@@ -252,13 +251,13 @@ static int ipqess_edma_rx_ring_alloc(struct ipqess_edma *edma)
 		if (!rx_ring->buf)
 			return -ENOMEM;
 
-		rx_ring->hw_desc =
+		rx_ring->desc_dma =
 			dmam_alloc_coherent(&edma->pdev->dev,
-					    sizeof(struct ipqess_edma_rx_desc)
+					    sizeof(dma_addr_t)
 					    * IPQESS_EDMA_RX_RING_SIZE,
-					    &rx_ring->dma, GFP_KERNEL);
+					    &rx_ring->ring_dma, GFP_KERNEL);
 
-		if (!rx_ring->hw_desc)
+		if (!rx_ring->desc_dma)
 			return -ENOMEM;
 
 		rx_ring->page_pool = page_pool_create(&pp_params);
@@ -274,7 +273,7 @@ static int ipqess_edma_rx_ring_alloc(struct ipqess_edma *edma)
 
 		ipqess_edma_w32(edma,
 				IPQESS_EDMA_REG_RFD_BASE_ADDR_Q(rx_ring->idx),
-				(u32)(rx_ring->dma));
+				(u32)(rx_ring->ring_dma));
 	}
 
 	ipqess_edma_w32(edma, IPQESS_EDMA_REG_RX_DESC0,
@@ -404,6 +403,7 @@ static int ipqess_edma_rx_poll(struct ipqess_edma_rx_ring *rx_ring, int budget)
 		num_desc = le16_to_cpu(rd->rrd1) & IPQESS_EDMA_RRD_NUM_RFD_MASK;
 		length = le16_to_cpu(rd->rrd6) & IPQESS_EDMA_RRD_PKT_SIZE_MASK;
 
+		/* shift skb headroom to remove rx desc from skb data */
 		skb_reserve(skb, IPQESS_EDMA_RRD_SIZE);
 		if (num_desc > 1) {
 			struct sk_buff *skb_prev = NULL;
@@ -667,14 +667,14 @@ static int ipqess_edma_cal_txd_req(struct sk_buff *skb)
 static struct ipqess_edma_buf *ipqess_edma_get_tx_buffer(struct ipqess_edma_tx_ring *tx_ring,
 							 struct ipqess_edma_tx_desc *desc)
 {
-	return &tx_ring->buf[desc - tx_ring->hw_desc];
+	return &tx_ring->buf[desc - tx_ring->desc];
 }
 
 static struct ipqess_edma_tx_desc *ipqess_edma_tx_desc_next(struct ipqess_edma_tx_ring *tx_ring)
 {
 	struct ipqess_edma_tx_desc *desc;
 
-	desc = &tx_ring->hw_desc[tx_ring->head];
+	desc = &tx_ring->desc[tx_ring->head];
 	tx_ring->head = IPQESS_EDMA_NEXT_IDX(tx_ring->head, tx_ring->count);
 
 	return desc;
@@ -689,11 +689,11 @@ static void ipqess_edma_rollback_tx(struct ipqess_edma *eth,
 	struct ipqess_edma_buf *buf;
 	u16 start_index, index;
 
-	start_index = first_desc - tx_ring->hw_desc;
+	start_index = first_desc - tx_ring->desc;
 
 	index = start_index;
 	while (index != tx_ring->head) {
-		desc = &tx_ring->hw_desc[index];
+		desc = &tx_ring->desc[index];
 		buf = &tx_ring->buf[index];
 		ipqess_edma_tx_unmap_and_free(&eth->pdev->dev, buf);
 		memset(desc, 0, sizeof(*desc));
